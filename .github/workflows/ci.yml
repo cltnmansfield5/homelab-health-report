@@ -1,0 +1,40 @@
+name: Validate diagnostics pipeline
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Unit and local gateway integration tests
+        run: python3 -m unittest discover -v
+      - name: Check deployment definitions
+        run: |
+          bash -n scripts/prepare-host.sh scripts/security-check.sh
+          HH_UID=10001 HH_GID=10001 DOCKER_GID=999 docker compose config --quiet
+          systemd-analyze verify deploy/systemd/homelab-health-host.service
+      - name: Build both images
+        run: |
+          docker build --target collector -t homelab-health:ci .
+          docker build --target uploader -t homelab-health-uploader:ci .
+          docker run --rm homelab-health:ci --help
+          docker run --rm --entrypoint rclone homelab-health-uploader:ci version
+      - name: Read bundled config without host config mounts
+        run: |
+          for image in homelab-health:ci homelab-health-uploader:ci; do
+            docker run --rm --user 10001:10001 --read-only --cap-drop ALL --network none -e HH_INBOX_FOLDER_ID=inbox1234 -e HH_REPORTS_FOLDER_ID=reports1234 --entrypoint python "$image" -c 'from pathlib import Path; from homelab_health.common import load_config; from homelab_health.uploader import Rclone; assert load_config("/config/collector.toml")["docker_url"]; assert load_config("/config/upload.toml")["inbox_folder_id"] == ""; Rclone(load_config("/config/upload.toml", {"inbox_folder_id":"HH_INBOX_FOLDER_ID", "reports_folder_id":"HH_REPORTS_FOLDER_ID"})); assert not Path("/credentials/rclone.conf").exists(); assert not Path("/config/private-redactions.txt").exists()'
+          done
+      - name: Real Docker smoke test
+        run: python3 scripts/smoke-docker.py homelab-health:ci
+      - name: Verify metadata from the packaged rclone
+        run: docker run --rm --read-only --cap-drop ALL --network none --tmpfs /tmp:size=16m --mount "type=bind,source=$PWD/tests,target=/app/tests,readonly" --entrypoint python homelab-health-uploader:ci -m unittest tests.test_pipeline.RcloneTests.test_packaged_rclone_hash_metadata -v
+      - name: Scan secrets, Python and both images
+        run: bash scripts/security-check.sh homelab-health:ci homelab-health-uploader:ci

@@ -1,0 +1,8 @@
+# Only runtime code and generic config enter the build context.
+**
+!Dockerfile
+!homelab_health/
+!homelab_health/*.py
+!config/
+!config/collector.toml
+!config/upload.toml

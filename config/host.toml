@@ -1,0 +1,16 @@
+# Installed to /etc/homelab-health/host.toml, owned by root.
+# The host helper reads only this root-owned config, never container-written commands.
+sample_seconds = 60
+snapshot_seconds = 300
+daily_spool_mib = 64
+journal_lines = 5000
+journal_units = ["docker.service", "systemd-resolved.service", "NetworkManager.service", "systemd-networkd.service", "unattended-upgrades.service"]
+filesystem_paths = ["/"] # add actual mount targets on the host, not parent directories
+job_units = []                 # e.g. ["restic-backup.service", "restic-backup.timer"]
+dns_probe_hosts = ["example.com"]
+ping_targets = []              # opt in, e.g. your gateway and one public IP; no subnet scans
+smart_autodetect = true
+smart_devices = []             # optional explicit /dev/sda or /dev/nvme0n1
+nvidia_gpu = false
+redact_literals = []
+redaction_file = "/etc/homelab-health/private-redactions.txt"

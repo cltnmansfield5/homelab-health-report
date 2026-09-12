@@ -1,0 +1,36 @@
+[Unit]
+Description=Homelab health read-only Ubuntu helper
+After=local-fs.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=homelab-health
+WorkingDirectory=/opt/homelab-health
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m homelab_health host --config /etc/homelab-health/host.toml --output /var/lib/homelab-health/host
+Restart=on-failure
+RestartSec=30
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/homelab-health/host
+InaccessiblePaths=-/var/lib/homelab-health/credentials -/var/run/docker.sock
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+# SMART can require powerful raw I/O access. No device writes or self-tests are issued.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_RAWIO CAP_NET_RAW
+MemoryMax=256M
+CPUQuota=20%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

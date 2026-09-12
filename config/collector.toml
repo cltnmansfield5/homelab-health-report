@@ -1,0 +1,18 @@
+# No cloud credentials belong in this file.
+hostname = "homelab" # fallback only; a fresh helper status supplies actual hostname
+docker_url = "http://docker-api:2375"
+data_dir = "/data"
+host_dir = "/host"
+timezone = "UTC" # override with HH_TIMEZONE in Portainer or your local .env
+bundle_hour = 6
+sample_seconds = 60
+max_containers = 64
+daily_spool_mib = 64
+source_mib = 8                 # each container's bounded log tail
+evidence_source_mib = 40       # each of host/Docker history, split into <=8 MiB members
+bundle_mib = 128               # total uncompressed payload ceiling
+queue_mib = 2048               # stop new bundles when full; preserve unprocessed bundles
+include_containers = []        # optional shell-style name patterns
+exclude_containers = []
+redact_literals = []           # non-secret literals only; this file is tracked by Git
+redaction_file = "/config/private-redactions.txt" # private exact strings, outside the repo

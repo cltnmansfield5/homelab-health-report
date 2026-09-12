@@ -1,0 +1,10 @@
+# Match an rclone remote from `rclone listremotes`, without its trailing colon.
+# A name shown only in Ubuntu Files / Online Accounts is not an rclone remote.
+remote = "homelab" # HH_DRIVE_REMOTE overrides this value
+rclone_config = "/credentials/rclone.conf"
+inbox_folder_id = "" # required: HH_INBOX_FOLDER_ID
+reports_folder_id = "" # required: HH_REPORTS_FOLDER_ID
+outbox_dir = "/outbox"
+state_dir = "/state"
+local_days = 7
+drive_days = 30

@@ -1,0 +1,111 @@
+name: homelab-health
+
+x-common: &common
+  user: "${HH_UID:?Run scripts/prepare-host.sh}:${HH_GID:?Run scripts/prepare-host.sh}"
+  # Rebuild from the selected Git revision, including its non-secret config.
+  pull_policy: build
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  init: true
+  restart: unless-stopped
+  pids_limit: 64
+  tmpfs:
+    - /tmp:size=32m,mode=1777
+  labels:
+    homelab-health.exclude: "true"
+    com.centurylinklabs.watchtower.enable: "false"
+  logging:
+    driver: json-file
+    options:
+      max-size: "5m"
+      max-file: "2"
+
+services:
+  docker-api:
+    <<: *common
+    build:
+      context: .
+      target: collector
+    image: homelab-health:local
+    command: [proxy, --bind, "0.0.0.0"] # reachable only on the internal network
+    group_add: ["${DOCKER_GID:?Run scripts/prepare-host.sh}"]
+    volumes:
+      - type: bind
+        source: ${DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [docker-access]
+    mem_limit: 96m
+    cpus: 0.25
+    healthcheck:
+      test: [CMD, python, -m, homelab_health, health, --url, "http://127.0.0.1:2375/_ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  collector:
+    <<: *common
+    build:
+      context: .
+      target: collector
+    image: homelab-health:local
+    command: [collector]
+    environment:
+      HH_HOSTNAME: "${HH_HOSTNAME:-homelab}"
+      HH_TIMEZONE: "${HH_TIMEZONE:-UTC}"
+    depends_on:
+      docker-api:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: /etc/homelab-health/private-redactions.txt
+        target: /config/private-redactions.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${HH_DATA_DIR:-/var/lib/homelab-health}/host:/host:ro
+      - ${HH_DATA_DIR:-/var/lib/homelab-health}/outbox:/data/outbox
+      - ${HH_DATA_DIR:-/var/lib/homelab-health}/samples:/data/samples
+      - ${HH_DATA_DIR:-/var/lib/homelab-health}/collector-state:/data/collector-state
+    networks: [docker-access]
+    mem_limit: 512m
+    cpus: 0.50
+    healthcheck:
+      test: [CMD, python, -m, homelab_health, health, --status, /data/collector-state/status.json, --max-age, "600"]
+      interval: 60s
+      timeout: 10s
+      start_period: 180s
+      retries: 3
+
+  uploader:
+    <<: *common
+    build:
+      context: .
+      target: uploader
+    image: homelab-health-uploader:local
+    command: [upload]
+    environment:
+      HH_DRIVE_REMOTE: "${HH_DRIVE_REMOTE:-homelab}"
+      HH_INBOX_FOLDER_ID: "${HH_INBOX_FOLDER_ID:-}"
+      HH_REPORTS_FOLDER_ID: "${HH_REPORTS_FOLDER_ID:-}"
+    volumes:
+      - ${HH_DATA_DIR:-/var/lib/homelab-health}/outbox:/outbox
+      - ${HH_DATA_DIR:-/var/lib/homelab-health}/uploader-state:/state
+      - ${HH_DATA_DIR:-/var/lib/homelab-health}/credentials:/credentials
+    networks: [upload-egress]
+    mem_limit: 256m
+    cpus: 0.25
+    healthcheck:
+      test: [CMD, python, -m, homelab_health, health, --status, /state/status.json, --max-age, "1200"]
+      interval: 60s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+networks:
+  docker-access:
+    internal: true
+  upload-egress: {}
