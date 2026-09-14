@@ -66,9 +66,11 @@ class Rclone:
             for chunk in iter(lambda: stream.read(MIB), b""):
                 md5.update(chunk)
         def matches(meta):
-            return meta.get("Size") == source.stat().st_size and meta.get("Hashes", {}).get("MD5", "").lower() == md5.hexdigest()
+            text_part = name.startswith("transport-") and name.endswith(".md")
+            readable = not text_part or meta.get("MimeType", "").split(";", 1)[0] == "text/markdown"
+            return readable and meta.get("Size") == source.stat().st_size and meta.get("Hashes", {}).get("MD5", "").lower() == md5.hexdigest()
         if name in before and not matches(before[name]):
-            raise ValueError("Remote filename exists with different contents; refusing overwrite")
+            raise ValueError("Remote filename exists with different contents or MIME type; refusing overwrite")
         if name not in before:
             self.call(["copyto", str(source), self.path(name), "--checksum", "--immutable"], folder, timeout=900)
         after = self.list(folder)

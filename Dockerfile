@@ -16,7 +16,8 @@ WORKDIR /app
 RUN apk upgrade --no-cache \
     && apk add --no-cache tzdata ca-certificates \
     && python -m pip uninstall --yes pip setuptools wheel \
-    && rm -rf /usr/local/lib/python3.13/ensurepip
+    && rm -rf /usr/local/lib/python3.13/ensurepip \
+    && printf '\ntext/markdown md markdown\n' >> /etc/mime.types
 COPY homelab_health/ /app/homelab_health/
 # Only non-secret, repository-owned settings belong in the image.
 COPY config/collector.toml config/upload.toml /config/
