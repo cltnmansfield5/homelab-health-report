@@ -8,3 +8,6 @@ outbox_dir = "/outbox"
 state_dir = "/state"
 local_days = 7
 drive_days = 30
+# Lossless Markdown parts for report workers whose Drive binary download is unavailable.
+# Backfills completed archives still in the local outbox after an uploader rebuild.
+text_transport = true

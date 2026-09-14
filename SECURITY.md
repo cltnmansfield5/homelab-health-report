@@ -1,5 +1,12 @@
 # Security
 
+The optional [Drive text transport](docs/text-transport.md) contains the same
+private bytes as its source archive. Base64 does not encrypt or further redact
+them. It uses the existing uploader credential and private Inbox, adds no host
+listener or privilege, and retains full archive validation and receipt-gated
+cleanup. Transport filenames and identities are checked before cleanup; no
+arbitrary path from a transport index is extracted or executed.
+
 This is a small diagnostic collector, not a security-certified agent. Publishing
 source does not itself open a network path to a server; safe deployment still
 depends on the host, Docker daemon, Portainer account and trusted build revision.

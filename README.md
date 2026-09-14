@@ -1,5 +1,9 @@
 # Homelab Health
 
+Drive binary downloads unavailable in your report worker? The uploader includes
+a [lossless text fallback](docs/text-transport.md) that preserves the original
+archive hashes, safety checks, and receipt-gated retention.
+
 Collect Docker and native Ubuntu diagnostics, build verified archives, and
 optionally upload completed drops to private Google Drive folders for reporting.
 The runtime uses Python's standard library. It never repairs or restarts monitored

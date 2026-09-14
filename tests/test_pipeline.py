@@ -188,11 +188,14 @@ class RcloneTests(unittest.TestCase):
             source = root / "source"
             source.mkdir()
             (source / "fixture.txt").write_bytes(b"archive")
+            (source / "transport-fixture.md").write_bytes(b"# Synthetic transport\n")
             config = root / "rclone.conf"
             config.write_text("[fixture]\ntype = alias\nremote = " + str(source) + "\n")
             client = Rclone({"remote": "fixture", "rclone_config": str(config),
                              "inbox_folder_id": "inbox1234", "reports_folder_id": "reports1234"})
-            item = client.list("inbox")["fixture.txt"]
+            listing = client.list("inbox")
+            self.assertEqual(listing["transport-fixture.md"]["MimeType"].split(";", 1)[0], "text/markdown")
+            item = listing["fixture.txt"]
             self.assertEqual(item["Size"], 7)
             self.assertEqual(item["Hashes"]["MD5"], hashlib.md5(b"archive", usedforsecurity=False).hexdigest())
 
@@ -200,6 +203,19 @@ class RcloneTests(unittest.TestCase):
         with patch.object(Rclone, "call", return_value=json.dumps([{"Name": "same"}, {"Name": "same"}])):
             with self.assertRaisesRegex(ValueError, "Duplicate"):
                 self.client().list("inbox")
+
+    def test_transport_with_binary_mime_type_is_not_considered_complete(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "transport-fixture.md"
+            path.write_bytes(b"# Synthetic transport\n")
+            item = {"Name": path.name, "ID": "fixture-id", "Size": path.stat().st_size,
+                    "MimeType": "application/octet-stream",
+                    "Hashes": {"MD5": hashlib.md5(path.read_bytes(), usedforsecurity=False).hexdigest()}}
+            client = self.client()
+            with patch.object(client, "list", return_value={path.name: item}), patch.object(client, "call") as call:
+                with self.assertRaisesRegex(ValueError, "MIME type"):
+                    client.put(path, path.name, "inbox")
+                call.assert_not_called()
 
     def test_remote_hash_mismatch_is_rejected(self):
         with tempfile.TemporaryDirectory() as root:

@@ -33,6 +33,10 @@ def main():
             item.add_argument("--output", required=True)
             item.add_argument("--previous")
     health = sub.add_parser("health")
+    restore = sub.add_parser("restore-transport")
+    restore.add_argument("index", help="Locally saved transport-<sha256>.ready.md")
+    restore.add_argument("--output-dir", required=True)
+    restore.add_argument("--archive-id", help="Archive ID confirmed from Drive metadata")
     health.add_argument("--status")
     health.add_argument("--url")
     health.add_argument("--max-age", type=int, default=300)
@@ -74,6 +78,9 @@ def main():
         from .report import report
         result = report(args.archive, args.marker, args.output, read_json(args.previous) if args.previous else None)
         print(json.dumps({"report": args.output, "findings": len(result["findings"])}))
+    elif args.role == "restore-transport":
+        from .transport import restore
+        print(json.dumps(restore(args.index, args.output_dir, args.archive_id)))
     elif args.role == "health":
         if args.url:
             target = urllib.parse.urlsplit(args.url)

@@ -26,3 +26,7 @@ Use the [generic task template](chatgpt-report-prompt.md), substituting private
 folder URLs and timezone outside Git. Verify the first real drop and saved
 report/receipt before enabling recurring analysis. No model API or cloud
 credential is needed in the collector.
+
+If Drive reads Markdown but cannot materialize archive downloads, use the
+[lossless text fallback](text-transport.md). It reconstructs the exact original
+archive and preserves all integrity and full-review receipt requirements.
