@@ -83,6 +83,13 @@ update; rebuilding the containers alone is insufficient.
 
 ## Verify
 
+For the [Drive text fallback](text-transport.md), rebuild/redeploy the existing
+uploader from the reviewed revision. No new environment variables or helper
+restart are required. Existing local archives backfill automatically; wait for
+`transport-<sha256>.ready.md` and an uploader status of `ok: true`. Keep the
+existing outbox, state, and credential mounts. Check the part-progress fields
+while a backfill is running.
+
 In Portainer, check gateway, collector and uploader health and their recent logs.
 On the host:
 

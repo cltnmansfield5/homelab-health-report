@@ -122,6 +122,9 @@ class Uploader:
         self.remote = remote or Rclone(config)
         self.local_days = bounded_int(config.get("local_days", 7), 1, 365, "local_days")
         self.drive_days = bounded_int(config.get("drive_days", 30), self.local_days, 3650, "drive_days")
+        self.text_transport = config.get("text_transport", False)
+        if type(self.text_transport) is not bool:
+            raise ValueError("text_transport must be a boolean")
         self.stop = threading.Event()
 
     def upload_one(self, marker_path):
@@ -137,6 +140,13 @@ class Uploader:
         uploaded = {"marker": marker, "archive_id": meta["ID"], "archive_md5": meta["Hashes"]["MD5"],
                     "marker_id": ready["ID"], "marker_md5": ready["Hashes"]["MD5"], "uploaded_at_utc": stamp()}
         atomic_json(self.state / ("uploaded-" + marker["sha256"] + ".json"), uploaded)
+        if self.text_transport:
+            from .transport import upload_transport
+            def progress(done, total):
+                status(self.state / "status.json", False, phase="text_transport", archive=archive.name,
+                       completed_parts=done, total_parts=total, pending_uploads=1)
+            uploaded["transport"] = upload_transport(self.remote, archive, marker, meta["ID"], progress)
+            atomic_json(self.state / ("uploaded-" + marker["sha256"] + ".json"), uploaded)
         return uploaded
 
     def retention(self, at=None):
@@ -188,11 +198,29 @@ class Uploader:
                 atomic_json(path, record)
                 deleted.append({"sha256": digest, "location": "local"})
             if age >= dt.timedelta(days=self.drive_days) and not record.get("drive_deleted"):
+                # Mirrors are private evidence, governed by the SAME full-review receipt.
+                # Refuse changed identities/content; remove the mirror index before parts.
+                transport = record.get("transport", {})
+                try:
+                    from .transport import retention_files
+                    mirrored = retention_files(transport, marker) if transport else []
+                except (KeyError, ValueError, TypeError, AttributeError):
+                    issues.append({"sha256": digest, "error": "invalid_transport_retention_record"})
+                    continue
+                if any(item["Name"] in inbox and (
+                        inbox[item["Name"]].get("ID") != item["ID"]
+                        or inbox[item["Name"]].get("Size") != item["Size"]
+                        or inbox[item["Name"]].get("Hashes", {}).get("MD5") != item["Hashes"]["MD5"])
+                       for item in mirrored):
+                    issues.append({"sha256": digest, "error": "remote_transport_changed_before_retention"})
+                    continue
                 if ((remote_archive and (remote_archive.get("ID") != record["archive_id"] or remote_archive.get("Size") != marker["archive_bytes"] or remote_archive.get("Hashes", {}).get("MD5") != record["archive_md5"]))
                         or (remote_ready and (remote_ready.get("ID") != record["marker_id"] or remote_ready.get("Hashes", {}).get("MD5") != record["marker_md5"]))):
                     issues.append({"sha256": digest, "error": "remote_file_changed_before_retention"})
                     continue
                 # Deletion is exact and moved to Drive trash, never a folder-wide purge.
+                for item in mirrored:
+                    self.remote.delete(item["Name"], "inbox", item["ID"])
                 self.remote.delete(ready.name, "inbox", record["marker_id"])
                 self.remote.delete(archive.name, "inbox", record["archive_id"])
                 record["drive_deleted"] = stamp(at)
@@ -210,8 +238,11 @@ class Uploader:
                 continue
             try:
                 marker = validate_marker(read_json(marker_path, 65536))
-                if (self.state / ("uploaded-" + marker["sha256"] + ".json")).exists():
-                    continue
+                uploaded_path = self.state / ("uploaded-" + marker["sha256"] + ".json")
+                if uploaded_path.exists():
+                    uploaded = read_json(uploaded_path)
+                    if not self.text_transport or uploaded.get("transport"):
+                        continue
                 pending += 1
                 retry_path = self.state / ("retry-" + marker["sha256"] + ".json")
                 retry = read_json(retry_path) if retry_path.exists() else {}
