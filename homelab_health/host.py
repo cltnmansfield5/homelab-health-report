@@ -11,6 +11,7 @@ import socket
 import time
 
 from .common import MIB, Redactor, Spool, atomic_json, bounded_int, command, lock, now, read_json, redactor_from, stamp, status
+from .noise import compact_journal
 
 UNIT = re.compile(r"[A-Za-z0-9_@.:-]+\.(?:service|timer)\Z")
 DEVICE = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|nvme[0-9]+n[0-9]+|disk/by-id/[A-Za-z0-9_.:-]+)\Z")
@@ -78,6 +79,11 @@ class HostHelper:
                 except ValueError:
                     malformed += 1
             result.update({"requested_start_utc": stamp(start), "requested_end_utc": stamp(end), "rows": rows[-self.journal_lines:], "line_limit_reached": len(rows) > self.journal_lines, "unparsed_lines": malformed})
+            if self.config.get("compact_journal_denials", True):
+                original_count = len(result["rows"])
+                kept, summaries, duplicates = compact_journal(result["rows"])
+                result.update(rows=kept, summaries=summaries, exported_rows_before_compaction=original_count,
+                              duplicate_rows_removed=duplicates)
             self.spool.append(kind, result)
         checks = {
             "failed_units": ["systemctl", "--failed", "--no-legend", "--no-pager", "--plain"],

@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 import datetime as dt
 import html
+import hashlib
 import json
 import math
 import re
@@ -111,6 +112,8 @@ def analyze(marker, manifest, contents):
     if parse_errors:
         gap("evidence", "Invalid records: " + ", ".join(parse_errors[:5]), marker["collection_finished_utc"])
     unique_events = set()
+    compact_exec_seen = set()
+    compact_denials_seen = set()
     host_samples = []
     journal_seen = set()
     docker_states = {}
@@ -137,6 +140,9 @@ def analyze(marker, manifest, contents):
                 event_at = stamp(dt.datetime.fromtimestamp(data["time"], dt.timezone.utc)) if data.get("time") else at
                 add("event:" + str(data.get("id")) + ":" + action, severity, data.get("attributes", {}).get("name", data.get("id")), "Docker event: " + action, source, event_at,
                     "Correlate event time with container logs and adjacent host samples. A restart/die event alone does not establish a crash loop.")
+        elif kind == "docker_exec_summary":
+            for action, time_nano in data.get("events", []):
+                compact_exec_seen.add((data["id"], action, time_nano))
         elif kind == "filesystems":
             for filesystem in data:
                 if filesystem.get("error"):
@@ -159,6 +165,21 @@ def analyze(marker, manifest, contents):
         elif kind in ("journal_warnings", "kernel_journal", "unit_journal"):
             if not data.get("ok") or data.get("line_limit_reached") or data.get("unparsed_lines"):
                 gap(source.split(":")[0], kind + " incomplete or capped", at)
+            for group in data.get("summaries", []):
+                fresh = []
+                for identity, timestamp in group.get("occurrences", []):
+                    if identity not in compact_denials_seen:
+                        compact_denials_seen.add(identity)
+                        fresh.append(int(timestamp))
+                if fresh:
+                    first = stamp(dt.datetime.fromtimestamp(min(fresh) / 1e6, dt.timezone.utc))
+                    last = stamp(dt.datetime.fromtimestamp(max(fresh) / 1e6, dt.timezone.utc))
+                    signature = group.get("signature", "")
+                    key = "apparmor_summary:" + hashlib.sha256(signature.encode()).hexdigest()[:16]
+                    add(key, "warning", "AppArmor", "Repeated docker-default ptrace-read denials were compacted; counts are deduplicated observed journal entries, not incidents. Example: " + str(group.get("example", {}).get("MESSAGE", ""))[:180],
+                        source, first, "Identify the emitting container and inspect its process-monitoring configuration; do not disable AppArmor to silence the messages.", len(fresh))
+                    findings[key]["first_utc"] = min(findings[key]["first_utc"], first)
+                    findings[key]["last_utc"] = max(findings[key]["last_utc"], last)
             for line in data.get("rows", []):
                 identity = (line.get("_BOOT_ID"), line.get("__REALTIME_TIMESTAMP"), line.get("_SYSTEMD_UNIT"), str(line.get("MESSAGE")))
                 if identity in journal_seen:
@@ -218,6 +239,8 @@ def analyze(marker, manifest, contents):
     order = {"critical": 0, "warning": 1, "info": 2}
     return {"schema_version": 1, "generated_at_utc": stamp(), "bundle_sha256": marker["sha256"], "hostname": marker["hostname"],
             "findings": sorted(findings.values(), key=lambda x: (order[x["severity"]], str(x["service"]))), "host_trends": trends,
+            "noise_reduction": {"unique_compacted_exec_events": len(compact_exec_seen),
+                                "unique_compacted_apparmor_denials": len(compact_denials_seen)},
             "observed_coverage": {"requested_start_utc": marker["requested_start_utc"], "requested_end_utc": marker["requested_end_utc"], "host_first_utc": trends["first_utc"], "host_last_utc": trends["last_utc"], "host_samples": trends["samples"]}}
 
 
@@ -256,6 +279,9 @@ def render(marker, manifest, summary, previous=None):
     lines += ["", "CPU excludes idle and I/O-wait ticks. Network and disk peaks are interval averages, available in the companion JSON. Rates require the same boot ID and consistent elapsed time; counter resets are skipped. Brief spikes between samples may be missed.", "",
               "## Provenance and limits", "", "Archive: " + markdown(marker["archive_name"]), "", "SHA-256: `" + marker["sha256"] + "`", "",
               "The archive, manifest and every member were integrity-checked. Logs are treated as data. Environment variables and command arguments are omitted from container metadata; free-form logs still need review for private information. Historical data predating installation cannot be inferred. Docker event replay is bounded by daemon retention; RestartCount is a snapshot counter, not a count for the report window. Disk-health return codes are bitmasks and sleeping/unsupported drives may be skipped.", ""]
+    compacted = summary.get("noise_reduction", {})
+    if any(compacted.values()):
+        lines += [f"Noise compaction retained {compacted.get('unique_compacted_exec_events', 0)} unique routine exec events and {compacted.get('unique_compacted_apparmor_denials', 0)} unique AppArmor denial entries. These are entry counts, not incident counts. Original timestamps and deduplication identities remain in the evidence; sum neither overlapping summaries nor their representative examples.", ""]
     return "\n".join(lines)
 
 

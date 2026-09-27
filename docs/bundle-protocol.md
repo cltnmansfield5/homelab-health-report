@@ -50,6 +50,46 @@ at most seven days of backfill. Never sum overlapping records as separate events
 Per-file observed first/last record times describe export records, not necessarily
 the original event span of a journal contained in a record.
 
+### Optional noise compaction
+
+These additive record fields do not change the archive or receipt schema.
+
+- `docker_exec_summary`: per-container batches of routine `exec_create`,
+  `exec_start`, and successful `exec_die` events. `events` contains
+  `[action, timeNano]` pairs; each summarized `exec_die` has exit code 0.
+  `count`, `first_time_nano`, and `last_time_nano` describe those entries.
+  Deduplicate by `(id, action, timeNano)` across batches and original events.
+  Failed or unknown-status exec exits remain full `docker_event` records, as do
+  lifecycle, health and OOM events. Exec-command text is not retained.
+- Host journal records can have `summaries` alongside `rows`. Only repeated
+  `docker-default` / `tokio-rt-worker` ptrace-read denials against `unconfined`
+  peers are compacted. Error/critical priorities, unfamiliar denials and other
+  messages stay individual. Signatures keep the PID, boot and access details;
+  only audit sequence/timestamp text is normalized for grouping.
+  Each summary retains an `example` plus `occurrences` pairs of
+  `[identity_sha256, original_realtime_microseconds]`, and first/last timestamps.
+  Identity is SHA-256 of the JSON-encoded journal cursor, or of the boot,
+  timestamp, unit and message tuple if no cursor is available. Count the union
+  of identities across summaries and exports; an example is already included
+  in `occurrences`, not an additional entry. Counts are observed journal entries,
+  not incidents or kernel-suppressed messages.
+- `exported_rows_before_compaction` and `duplicate_rows_removed` describe a
+  journal export before compaction. Duplicate removal is within an export;
+  overlaps between exports remain identifiable. Original cap/error flags are
+  preserved. Compaction cannot recover records the journal command did not return.
+
+Docker batches flush every 60 seconds of received traffic or at 256 pending
+events, and on disconnect/graceful thread exit. Pending entries and the last 512
+replay hashes are checkpointed atomically with the event cursor. On restart,
+pending entries are emitted before reconnecting. A crash between append and
+checkpoint can replay a batch, hence identity-based deduplication is required.
+Selected events above 4 KiB after redaction remain individual records to bound
+checkpoint size.
+If the spool is full, at most 256 pending entries are retained; further events
+follow the existing bounded-spool behavior and produce a cap notice. Summary
+`at` is flush time, which can be later than the original events after an outage.
+No summary extends demonstrated event coverage into that delay.
+
 ## Processing receipt
 
 The report worker writes a receipt only after fully reviewing the bundle and

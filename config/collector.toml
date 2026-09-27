@@ -6,6 +6,7 @@ host_dir = "/host"
 timezone = "UTC" # override with HH_TIMEZONE in Portainer or your local .env
 bundle_hour = 6
 sample_seconds = 60
+compact_exec_events = true     # batch routine exec activity; keep failures and lifecycle events individually
 max_containers = 64
 daily_spool_mib = 64
 source_mib = 8                 # each container's bounded log tail

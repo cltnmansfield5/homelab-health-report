@@ -88,6 +88,10 @@ for token refresh. Inspect a real bundle's redaction before enabling uploads.
   overlap, at most seven days of backfill. History starts when collection starts.
 - Each source spool: 64 MiB/day, current UTC date plus seven preceding dates.
   Bundles: 128 MiB payload; queue: 2 GiB. Limits and source gaps are recorded.
+- Routine Docker exec events and one known repetitive AppArmor ptrace-denial
+  pattern are compacted by default. Original timestamps and deduplication
+  identities remain available; failed execs, health/lifecycle events and other
+  journal messages remain individual. See [noise compaction](docs/bundle-protocol.md#optional-noise-compaction).
 - Reviewed bundles: 7 days locally / 30 days in Drive, measured from collection
   completion. Cleanup requires a matching receipt and saved report. Unprocessed
   bundles are preserved; a full queue stops new bundles.
@@ -111,5 +115,16 @@ For updates, use a reviewed revision, rerun the helper installer, rebuild the
 images and restart this project's services. Preserve data, state and credentials.
 Installed host configuration is preserved; compare new examples manually.
 Watchtower updates are disabled for these containers.
+
+For the noise-compaction update, rebuild/redeploy the existing collector and
+update the native helper from the same reviewed checkout using the normal
+helper installation procedure. Keep locally increased byte limits. Compaction
+defaults on even in an existing installed config without the new keys; it does
+not change limits or sampling frequency. Disable it with
+`compact_exec_events = false` in the collector config (rebuild required), or
+`compact_journal_denials = false` in `/etc/homelab-health/host.toml` (helper restart
+required). It changes diagnostic representation only, not health checks,
+AppArmor policy or application logs. Compare a complete new reporting window;
+old collection gaps cannot be reconstructed by compaction.
 
 [Architecture](docs/architecture.md) · [QA](docs/validation.md)

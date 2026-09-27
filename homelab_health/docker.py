@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections import OrderedDict
 import fnmatch
 import hashlib
 import json
@@ -12,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 from .common import MIB, atomic_json, now, read_json
+from .noise import compact_exec, routine_exec
 
 
 class Docker:
@@ -115,6 +117,70 @@ class EventPump(threading.Thread):
         super().__init__(daemon=True, name="docker-events")
         self.docker, self.spool, self.state_path, self.stop = docker, spool, state_path, stop
         self.config = config or {}
+        self.pending_exec = []
+        self.seen = OrderedDict()
+        self.cursor = int(time.time()) - 120
+        self.last_flush = time.monotonic()
+
+    def checkpoint(self):
+        # Pending batches and replay identities advance atomically with the cursor.
+        atomic_json(self.state_path, {"epoch": self.cursor, "at": now().isoformat(),
+                                     "pending_exec": self.pending_exec, "seen": list(self.seen)})
+
+    def restore(self):
+        try:
+            state = read_json(self.state_path)
+        except FileNotFoundError:
+            return
+        self.cursor = state.get("epoch", self.cursor)
+        self.pending_exec = state.get("pending_exec", [])
+        self.seen = OrderedDict.fromkeys(state.get("seen", [])[-512:])
+
+    def flush_exec(self):
+        if not self.pending_exec:
+            self.last_flush = time.monotonic()
+            return True
+        # A crash between append and checkpoint can replay a batch. Each entry's
+        # container/action/timeNano identity survives, so readers can deduplicate.
+        remaining = []
+        accepted = True
+        for group in compact_exec(self.pending_exec):
+            if not self.spool.append("docker_exec_summary", group):
+                accepted = False
+                remaining.extend(e for e in self.pending_exec if e["id"] == group["id"])
+        self.pending_exec = remaining
+        self.checkpoint()
+        self.last_flush = time.monotonic()
+        return accepted
+
+    def record_event(self, raw):
+        event = selected_event(raw)
+        key = hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()
+        if key not in self.seen and self.include(raw):
+            action = routine_exec(event) if self.config.get("compact_exec_events", True) else None
+            if action:
+                # exec_create/start Action may embed arguments. Never persist those.
+                event["action"] = action
+                compacted = self.spool.redactor.clean(event)
+                # Keep the checkpoint below the reader's 2 MiB bound even when
+                # labels or exact-string redaction expand a selected event.
+                if len(json.dumps(compacted).encode()) > 4096:
+                    action = None
+            if action and len(self.pending_exec) >= 256:
+                self.flush_exec()
+            if action and len(self.pending_exec) < 256:
+                self.pending_exec.append(compacted)
+            elif not self.spool.append("docker_event", event):
+                # The spool records its own cap notice. Do not retain unbounded
+                # backlog or claim that this individual event was captured.
+                pass
+            self.seen[key] = None
+            if len(self.seen) > 512:
+                self.seen.popitem(last=False)
+        self.cursor = max(self.cursor, int(event.get("time") or self.cursor))
+        self.checkpoint()
+        if time.monotonic() - self.last_flush >= 60 or len(self.pending_exec) >= 256:
+            self.flush_exec()
 
     def include(self, raw):
         attrs = raw.get("Actor", {}).get("Attributes", {})
@@ -125,15 +191,16 @@ class EventPump(threading.Thread):
                 and (not include or any(fnmatch.fnmatch(name, p) for p in include)))
 
     def run(self):
-        seen = set()
         try:
-            cursor = read_json(self.state_path).get("epoch", int(time.time()) - 120)
-        except (OSError, ValueError):
-            cursor = int(time.time()) - 120
-        self.spool.append("event_coverage", {"note": "Live collection begins here. Reconnect replay is limited by Docker's retained event buffer (last 256 events); gaps cannot be ruled out.", "requested_since_epoch": cursor})
+            self.restore()
+            self.flush_exec()
+        except (OSError, ValueError, TypeError, KeyError):
+            self.spool.append("event_connection_gap", {"error": "event_checkpoint_unavailable", "replay_may_be_incomplete": True})
+            return
+        self.spool.append("event_coverage", {"note": "Live collection begins here. Reconnect replay is limited by Docker's retained event buffer (last 256 events); gaps cannot be ruled out. Routine exec activity may be compacted with original identities and nanosecond timestamps.", "requested_since_epoch": self.cursor})
         while not self.stop.is_set():
             try:
-                url = self.docker.url(self.docker.api_path("/events"), {"since": int(cursor) - 1, "filters": json.dumps({"type": ["container"]})})
+                url = self.docker.url(self.docker.api_path("/events"), {"since": int(self.cursor) - 1, "filters": json.dumps({"type": ["container"]})})
                 with self.docker.opener.open(url, timeout=70) as response:
                     while not self.stop.is_set():
                         line = response.readline(65537)
@@ -142,15 +209,9 @@ class EventPump(threading.Thread):
                         if len(line) > 65536:
                             raise ValueError("Event line limit exceeded")
                         raw = json.loads(line)
-                        event = selected_event(raw)
-                        key = hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()
-                        if key not in seen and self.include(raw):
-                            self.spool.append("docker_event", event)
-                            seen.add(key)
-                        cursor = max(cursor, int(event.get("time") or cursor))
-                        atomic_json(self.state_path, {"epoch": cursor, "at": now().isoformat()})
-                        if len(seen) > 4096:
-                            seen = {key}
+                        self.record_event(raw)
             except Exception as exc:
                 self.spool.append("event_connection_gap", {"error": type(exc).__name__, "replay_may_be_incomplete": True})
+            self.flush_exec()
             self.stop.wait(2)
+        self.flush_exec()
