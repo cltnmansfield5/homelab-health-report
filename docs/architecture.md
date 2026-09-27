@@ -51,3 +51,13 @@ The archive is created before its marker; the marker uploads only after archive
 verification. Readers check SHA-256, member hashes, paths, types and expansion
 limits, including tar metadata. Files are never executed or extracted to arbitrary
 paths. See the [protocol](bundle-protocol.md) and [security notes](../SECURITY.md).
+
+
+## Deployment ownership
+
+One host has one native helper and one collector/uploader pair for these paths.
+Komodo manages the Compose services, but a container rebuild does not update
+root-owned code in `/opt/homelab-health`. Update the native helper from the same
+reviewed checkout. The older private and newer public repositories share project
+and local-image names; running both is not an isolation strategy. See
+[Komodo adoption](komodo.md) and [storage/lock troubleshooting](operations.md).

@@ -25,4 +25,15 @@ Local environments without Docker/rclone or Unix sockets cannot run every
 integration check. A passing synthetic test is not proof of host permissions,
 Drive OAuth access, firewall settings or actual hardware health.
 Use the exact commit's CI result and the deployment checks in
-[Portainer setup](portainer.md). See [security scope](../SECURITY.md).
+[Komodo setup](komodo.md) or optional [Portainer setup](portainer.md). See [security scope](../SECURITY.md).
+
+
+## Added regression coverage
+
+The current review checks that a warning-to-critical disk transition retains
+critical severity and its supporting source even if input order changes, and
+that Docker exec-create/start action suffixes cannot persist positional secrets.
+Use `python3 -m unittest tests.test_regressions -v` for this focused coverage.
+Report skipped integration tests explicitly; do not count a skipped rclone or
+Docker test as executed. Run `bash -n scripts/prepare-host.sh scripts/security-check.sh`
+before shell changes and inspect the full CI job for image/security checks.

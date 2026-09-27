@@ -15,6 +15,20 @@ from tests.test_pipeline import PipelineTests
 
 
 class GatewayUnitTests(unittest.TestCase):
+    def test_exec_action_arguments_are_removed_before_any_spooling(self):
+        for field in ("Action", "status"):
+            for action in ("exec_create", "exec_start"):
+                with self.subTest(field=field, action=action):
+                    raw = {field: action + ": /bin/task positional-private-value",
+                           "Actor": {"ID": CONTAINER, "Attributes": {"name": "synthetic"}},
+                           "time": 1, "timeNano": 1000000000}
+                    event = selected_event(raw)
+                    self.assertEqual(event["action"], action)
+                    self.assertNotIn("positional-private-value", json.dumps(event))
+                    self.assertEqual(event["timeNano"], raw["timeNano"])
+        event = selected_event({"Action": "health_status: unhealthy"})
+        self.assertEqual(event["action"], "health_status: unhealthy")
+
     def test_event_capture_respects_include_and_exclude_configuration(self):
         pump = EventPump(None, None, None, None, {"include_containers": ["plex*"], "exclude_containers": ["plex-private"]})
         self.assertTrue(pump.include({"Actor": {"Attributes": {"name": "plex-main"}}}))
@@ -73,6 +87,27 @@ class GatewayUnitTests(unittest.TestCase):
 
 
 class ReportRegressionTests(unittest.TestCase):
+    def test_filesystem_finding_keeps_worst_severity_in_any_order(self):
+        start = dt.datetime(2026, 9, 27, 12, tzinfo=dt.timezone.utc)
+        marker = {"sha256": "a" * 64, "hostname": "synthetic",
+                  "requested_start_utc": start.isoformat(),
+                  "requested_end_utc": (start + dt.timedelta(minutes=2)).isoformat(),
+                  "collection_finished_utc": (start + dt.timedelta(minutes=2)).isoformat()}
+        rows = [{"kind": "filesystems", "at": (start + dt.timedelta(minutes=i)).isoformat(),
+                 "data": [{"path": "/synthetic", "total_bytes": 100, "available_bytes": free}]}
+                for i, free in enumerate((10, 2, 12))]
+        for records in (rows, list(reversed(rows))):
+            with self.subTest(order=[r["at"] for r in records]):
+                contents = {"host/evidence-000.jsonl": "\n".join(map(json.dumps, records)).encode()}
+                result = analyze(marker, {"files": [], "issues": []}, contents)
+                finding = next(f for f in result["findings"] if f["key"] == "filesystem:/synthetic:space")
+                self.assertEqual(finding["severity"], "critical")
+                self.assertIn("98.0%", finding["message"])
+                self.assertEqual(finding["source"], "host/evidence-000.jsonl:2")
+                self.assertEqual(finding["observations"], 3)
+                self.assertEqual(finding["first_utc"], rows[0]["at"])
+                self.assertEqual(finding["last_utc"], rows[2]["at"])
+
     def test_overlap_events_and_journal_rows_are_deduplicated(self):
         at = now()
         event = {"kind": "docker_event", "at": at.isoformat(), "data": {"id": CONTAINER, "time": int(at.timestamp()), "timeNano": int(at.timestamp()) * 10**9, "action": "oom"}}
@@ -108,3 +143,4 @@ class RetentionRegressionTests(unittest.TestCase):
 
 
 del PipelineTests
+

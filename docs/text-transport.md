@@ -80,3 +80,11 @@ identical filenames and refuses conflicts. Partial files remain ineligible for
 automatic cleanup until upload completes and a valid receipt exists. Turning
 the fallback off does not delete copies. Base64 is encoding, **not encryption
 or extra redaction**: protect these files like the diagnostic archives.
+
+
+## Deployment ownership
+
+Use the existing uploader in [the Komodo Stack](komodo.md). Do not run an extra
+uploader from the older private repository against the same outbox/state. The
+same `.uploader.lock` must protect all invocations, including manual one-shot
+commands. A contention error is not resolved by deleting the lock file.
