@@ -107,7 +107,12 @@ def demux(raw, tty=False):
 def selected_event(raw):
     actor = raw.get("Actor", {})
     attrs = actor.get("Attributes", {})
-    return {"type": raw.get("Type"), "action": raw.get("Action", raw.get("status")),
+    action = raw.get("Action", raw.get("status"))
+    # Docker embeds argv in exec_create/start Action strings, not only attributes.
+    # Positional secrets cannot be reliably redacted; never persist those arguments.
+    if isinstance(action, str) and re.match(r"^exec_(?:create|start)(?::|$)", action):
+        action = action.split(":", 1)[0]
+    return {"type": raw.get("Type"), "action": action,
             "id": actor.get("ID", raw.get("id")), "time": raw.get("time"), "timeNano": raw.get("timeNano"),
             "attributes": {k: attrs[k] for k in ("name", "image", "exitCode", "signal", "com.docker.compose.project", "com.docker.compose.service") if k in attrs}}
 
@@ -215,3 +220,4 @@ class EventPump(threading.Thread):
             self.flush_exec()
             self.stop.wait(2)
         self.flush_exec()
+

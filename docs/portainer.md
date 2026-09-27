@@ -1,5 +1,9 @@
 # Portainer Community
 
+This is an optional legacy deployment guide. For a stack migrated to Komodo,
+use [Komodo setup](komodo.md) and [operations](operations.md) instead. Do not
+redeploy the old Portainer stack against state owned by the Komodo deployment.
+
 Manage the existing stack through Portainer. Run the Ubuntu helper installer and
 rclone setup on the host; a stack deployment does not update the native helper.
 Do not start a second Compose project from a host checkout.
@@ -107,3 +111,4 @@ evidence when diagnosing retries.
 If Portainer cannot build the Git context, build both Dockerfile targets from
 the reviewed host checkout, use pull_policy: never for that deployment, and
 redeploy through Portainer. Keep the same existing stack and data paths.
+

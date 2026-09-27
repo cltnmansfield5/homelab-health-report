@@ -9,7 +9,7 @@ arbitrary path from a transport index is extracted or executed.
 
 This is a small diagnostic collector, not a security-certified agent. Publishing
 source does not itself open a network path to a server; safe deployment still
-depends on the host, Docker daemon, Portainer account and trusted build revision.
+depends on the host, Docker daemon, deployment-manager account and trusted build revision.
 
 ## Boundary
 
@@ -34,7 +34,7 @@ depends on the host, Docker daemon, Portainer account and trusted build revision
 ## Public-release hygiene
 
 The current examples use generic host/remote values and empty Drive IDs. Put
-personal deployment values in Portainer or an ignored local .env, and OAuth
+personal deployment values in Komodo or an ignored local .env, and OAuth
 tokens only in the protected host credential file. The Docker build context
 allows only runtime Python files and the two generic config files.
 
@@ -45,7 +45,7 @@ pull requests or cached diffs. If an actual credential is committed, rotate it
 and remove the exposure; deleting it from the latest source is insufficient.
 
 Require review and passing CI for deployment changes; use a reviewed revision in
-Portainer. Public pull requests must not gain repository write permissions or
+Komodo (or the manager of your existing stack). Public pull requests must not gain repository write permissions or
 host/cloud credentials. The CI workflow uses read-only repository permissions
 and no deployment credentials.
 
@@ -71,3 +71,21 @@ privately to the repository owner, without posting credentials or private logs.
 [Docker daemon security](https://docs.docker.com/engine/security/) ·
 [rclone Drive scope](https://rclone.org/drive/#scope) ·
 [Architecture](docs/architecture.md)
+
+
+## Vulnerability reporting and reviewed behavior
+
+Use GitHub's private vulnerability-reporting form if enabled. Otherwise use an
+established private maintainer contact; a public issue may request a contact
+without including the vulnerability, private bundle or credentials. Only reviewed
+main-branch revisions are intended for use; no long-term release SLA is promised.
+
+Docker can place exec arguments directly in event `Action` strings. The review
+branch strips arguments from `exec_create` and `exec_start` before event selection
+is persisted, including when noise compaction is disabled. Existing collected
+spools and uploaded archives are not rewritten or newly redacted by an upgrade.
+Treat older evidence as private and review its exposure separately.
+
+The 2026-09-27 source review and synthetic checks do not inspect the running host
+or constitute a fresh image CVE scan. Use [the release gate](docs/public-release.md)
+and [Komodo deployment verification](docs/komodo.md) for the actual revision.

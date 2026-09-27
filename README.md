@@ -1,5 +1,13 @@
 # Homelab Health
 
+## Repository status after the split
+
+This is the maintained public diagnostics project. Despite the repository name,
+it contains the collector, native host helper, uploader, archive verifier and
+local reporting code, not just rendered reports. The private `homelab-health`
+repository is its older predecessor; it does not include the text transport or
+noise-compaction additions. Deploy one checkout and one stack for a given host.
+
 Drive binary downloads unavailable in your report worker? The uploader includes
 a [lossless text fallback](docs/text-transport.md) that preserves the original
 archive hashes, safety checks, and receipt-gated retention.
@@ -56,15 +64,16 @@ docker compose up -d --build docker-api collector
 docker compose ps
 ~~~
 
-For **Portainer Community**, follow [its setup and upgrade guide](docs/portainer.md)
-instead of starting another Compose project.
+For **Komodo**, follow [the setup and adoption guide](docs/komodo.md).
+[Portainer instructions](docs/portainer.md) remain available for installations
+still using it. Choose one deployment manager for this Compose project.
 
 ## Optional Drive uploads
 
 Create or reuse an rclone remote with rclone config. An Ubuntu Online Accounts
 connection alone does not supply rclone credentials. Create/select two private
 folders, Inbox and Reports, and set HH_DRIVE_REMOTE, HH_INBOX_FOLDER_ID and
-HH_REPORTS_FOLDER_ID in .env or Portainer. The examples contain no real account
+HH_REPORTS_FOLDER_ID in .env or the private Komodo Stack environment. The examples contain no real account
 or folder identifiers. Empty folder IDs stop the uploader.
 
 ~~~bash
@@ -127,4 +136,8 @@ required). It changes diagnostic representation only, not health checks,
 AppArmor policy or application logs. Compare a complete new reporting window;
 old collection gaps cannot be reconstructed by compaction.
 
-[Architecture](docs/architecture.md) · [QA](docs/validation.md)
+[Architecture](docs/architecture.md) · [QA](docs/validation.md) ·
+[Operations](docs/operations.md) · [Release checks](docs/public-release.md) ·
+[Contributing](CONTRIBUTING.md) · [MIT license](LICENSE) ·
+[Third-party notices](THIRD_PARTY_NOTICES.md)
+

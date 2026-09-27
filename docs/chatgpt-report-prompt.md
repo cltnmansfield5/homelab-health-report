@@ -74,3 +74,9 @@ schema_version (integer 1), sha256, archive_name, archive_id, observed_coverage
 report_file_id, report_url (https://drive.google.com/file/d/REPORT_ID/view).
 The receipt authorizes 7-day local and 30-day Drive retention for known bundles.
 Never mark blocked, unverified or partially reviewed evidence processed.
+
+
+Within one reporting window, retain the highest observed severity for each finding
+and cite the observation supporting it. Do not let an earlier warning hide a later
+critical threshold crossing, or let a later improvement erase the critical event.
+Record the earliest and latest observations independently of source-file order.

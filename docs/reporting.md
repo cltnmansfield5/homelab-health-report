@@ -30,3 +30,12 @@ credential is needed in the collector.
 If Drive reads Markdown but cannot materialize archive downloads, use the
 [lossless text fallback](text-transport.md). It reconstructs the exact original
 archive and preserves all integrity and full-review receipt requirements.
+
+
+## Severity within a reporting window
+
+A finding keeps the highest observed severity across its window, along with the
+message and source supporting that escalation. A later lower reading does not
+remove an earlier critical condition. First/last timestamps bound all observations;
+recovery requires separate fresh evidence. The 2026-09-27 regression covers disk
+usage rising from 90% to 98% and then falling to 88%, including out-of-order input.

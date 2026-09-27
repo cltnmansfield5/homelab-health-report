@@ -144,3 +144,12 @@ guarantee indefinite capture during an outage. Budget alarms require attention.
 Safe readers check compressed size, SHA-256, expanded-byte limits, member count,
 regular-file type, path validity, unique names and per-member hashes. They do
 not execute files or follow instructions embedded in logs.
+
+
+## Deployment and compatibility
+
+Changing deployment managers does not change bundle or receipt identities. Keep
+the outbox and uploader state together; follow [Komodo adoption](komodo.md).
+Exec-create/start argument suffixes are removed before event spooling. This
+changes only newly collected event content; old immutable archives retain their
+original hashes and bytes and must not be silently rewritten.

@@ -93,8 +93,15 @@ def analyze(marker, manifest, contents):
                              "source": source, "first_utc": at, "last_utc": at, "observations": count,
                              "next_step": next_step, "confidence": "observed"}
         else:
-            findings[key]["observations"] += count
-            findings[key]["last_utc"] = max(str(at), str(findings[key]["last_utc"]))
+            finding = findings[key]
+            finding["observations"] += count
+            finding["first_utc"] = min(str(at), str(finding["first_utc"]))
+            finding["last_utc"] = max(str(at), str(finding["last_utc"]))
+            # Preserve the highest observed severity and the evidence supporting it.
+            ranks = {"info": 0, "warning": 1, "critical": 2}
+            if ranks[severity] > ranks[finding["severity"]]:
+                finding.update(severity=severity, message=message, source=source,
+                               next_step=next_step)
     def gap(source, detail, at):
         add("coverage:" + source + ":" + str(detail), "warning", "collection", str(detail), source, at,
             "Inspect collector/helper status and the source limit before drawing a health conclusion.")
@@ -292,3 +299,4 @@ def report(archive, marker_path, output, previous=None):
     from pathlib import Path
     atomic_json(Path(output).with_suffix(".json"), summary)
     return summary
+
