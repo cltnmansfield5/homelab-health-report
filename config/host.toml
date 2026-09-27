@@ -2,6 +2,7 @@
 # The host helper reads only this root-owned config, never container-written commands.
 sample_seconds = 60
 snapshot_seconds = 300
+compact_journal_denials = true # summarize known repetitive ptrace denials, with timestamps and deduplication IDs
 daily_spool_mib = 64
 journal_lines = 5000
 journal_units = ["docker.service", "systemd-resolved.service", "NetworkManager.service", "systemd-networkd.service", "unattended-upgrades.service"]
