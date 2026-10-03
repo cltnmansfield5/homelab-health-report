@@ -1,6 +1,7 @@
 """Compact only known repetition, retaining identities and original timestamps."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -14,7 +15,7 @@ def journal_identity(row):
 
 
 def compact_journal(rows):
-    """Only the known docker-default/tokio ptrace-read denial is summarized.
+    """Summarize known ptrace denials and exact kernel callback-suppression messages.
 
     Occurrences retain [identity hash, original microsecond timestamp]. This lets
     consumers count a union across overlapping exports, rather than sum counts.
@@ -33,7 +34,11 @@ def compact_journal(rows):
         expected = {"apparmor": "DENIED", "operation": "ptrace", "profile": "docker-default",
                     "comm": "tokio-rt-worker", "requested_mask": "read", "denied_mask": "read",
                     "peer": "unconfined"}
-        if (not all(fields.get(k) == v for k, v in expected.items())
+        denial = all(fields.get(k) == v for k, v in expected.items())
+        suppression = (isinstance(message, str) and
+                       re.fullmatch(r"kauditd_printk_skb: [0-9]+ callbacks suppressed", message) is not None
+                       and row.get("SYSLOG_IDENTIFIER") == "kernel")
+        if (not (denial or suppression)
                 or str(row.get("PRIORITY", "6")) not in ("4", "5", "6", "7")
                 or not row.get("_BOOT_ID") or not str(row.get("__REALTIME_TIMESTAMP", "")).isdigit()):
             kept.append(row)
@@ -46,7 +51,7 @@ def compact_journal(rows):
             if len(groups) >= 128:
                 kept.append(row)
                 continue
-            groups[key] = {"kind": "apparmor_ptrace_read", "signature": signature,
+            groups[key] = {"kind": "apparmor_ptrace_read" if denial else "kernel_callback_suppression", "signature": signature,
                            "example": row, "occurrences": []}
         groups[key]["occurrences"].append([identity, row["__REALTIME_TIMESTAMP"]])
     summaries = []
@@ -85,3 +90,39 @@ def compact_exec(events):
         group["first_time_nano"] = group["events"][0][1]
         group["last_time_nano"] = group["events"][-1][1]
     return list(groups.values())
+
+
+def compact_health_successes(state):
+    """Omit only long successful probe output, after caller-side redaction.
+
+    Failures, unknown exits and unhealthy/starting snapshots are untouched.
+    Every captured probe keeps its original start/end and exit code. Short
+    successful output stays verbatim; long output has a size/hash fingerprint.
+    """
+    if state.get("health", {}).get("status") != "healthy":
+        return state
+    result = copy.deepcopy(state)
+    for probe in result.get("health", {}).get("log", []):
+        output = probe.get("Output")
+        if type(probe.get("ExitCode")) is int and probe["ExitCode"] == 0 and isinstance(output, str):
+            raw = output.encode("utf-8")
+            if len(raw) > 256:
+                del probe["Output"]
+                probe["successful_output_omitted"] = True
+                probe["output_bytes"] = len(raw)
+                probe["output_sha256"] = hashlib.sha256(raw).hexdigest()
+    return result
+
+
+def compact_json_text(result):
+    """Remove JSON indentation from successful status checks, not information."""
+    if not result.get("ok") or result.get("truncated") or result.get("timed_out"):
+        return result
+    try:
+        value = json.loads(result["text"])
+    except (ValueError, KeyError, TypeError):
+        return result
+    compact = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if len(compact.encode()) + 40 >= len(result["text"].encode()):
+        return result
+    return {**result, "text": compact, "json_whitespace_compacted": True}
