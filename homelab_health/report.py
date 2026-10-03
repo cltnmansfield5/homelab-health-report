@@ -10,6 +10,7 @@ import math
 import re
 
 from .bundle import read_verified_bundle
+from .tables import unpack_stats
 from .common import Redactor, atomic_bytes, atomic_json, now, parse_time, stamp
 
 
@@ -84,7 +85,11 @@ def analyze(marker, manifest, contents):
             try:
                 record = json.loads(line)
                 parse_time(record["at"])
-                evidence.append((record, f"{name}:{index}"))
+                if record.get("kind") == "docker_stats_table":
+                    for sample in unpack_stats(record["data"]):
+                        evidence.append(({**record, "kind": "docker_stats", "data": sample}, f"{name}:{index}"))
+                else:
+                    evidence.append((record, f"{name}:{index}"))
             except (ValueError, KeyError, TypeError):
                 parse_errors.append(f"{name}:{index}")
     def add(key, severity, service, message, source, at, next_step, count=1):
@@ -121,6 +126,7 @@ def analyze(marker, manifest, contents):
     unique_events = set()
     compact_exec_seen = set()
     compact_denials_seen = set()
+    compact_suppression_seen = set()
     host_samples = []
     journal_seen = set()
     docker_states = {}
@@ -174,14 +180,21 @@ def analyze(marker, manifest, contents):
                 gap(source.split(":")[0], kind + " incomplete or capped", at)
             for group in data.get("summaries", []):
                 fresh = []
+                seen = compact_suppression_seen if group.get("kind") == "kernel_callback_suppression" else compact_denials_seen
                 for identity, timestamp in group.get("occurrences", []):
-                    if identity not in compact_denials_seen:
-                        compact_denials_seen.add(identity)
+                    if identity not in seen:
+                        seen.add(identity)
                         fresh.append(int(timestamp))
                 if fresh:
                     first = stamp(dt.datetime.fromtimestamp(min(fresh) / 1e6, dt.timezone.utc))
                     last = stamp(dt.datetime.fromtimestamp(max(fresh) / 1e6, dt.timezone.utc))
                     signature = group.get("signature", "")
+                    if group.get("kind") == "kernel_callback_suppression":
+                        key = "journal_suppression:" + hashlib.sha256(signature.encode()).hexdigest()[:16]
+                        add(key, "warning", "collection", "Kernel suppressed journal callbacks; original events are unavailable. " + signature,
+                            source, first, "Investigate the noisy source; occurrence count is suppression messages, not suppressed callbacks or incidents.", len(fresh))
+                        findings[key]["last_utc"] = max(findings[key]["last_utc"], last)
+                        continue
                     key = "apparmor_summary:" + hashlib.sha256(signature.encode()).hexdigest()[:16]
                     add(key, "warning", "AppArmor", "Repeated docker-default ptrace-read denials were compacted; counts are deduplicated observed journal entries, not incidents. Example: " + str(group.get("example", {}).get("MESSAGE", ""))[:180],
                         source, first, "Identify the emitting container and inspect its process-monitoring configuration; do not disable AppArmor to silence the messages.", len(fresh))

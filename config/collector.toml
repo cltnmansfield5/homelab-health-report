@@ -18,3 +18,5 @@ exclude_containers = []
 redact_literals = []           # non-secret literals only; this file is tracked by Git
 redaction_file = "/config/private-redactions.txt" # private exact strings, outside the repo
 
+compact_stats = true           # lossless self-contained tables; preserve every sample and read timestamp
+compact_health_successes = true # fingerprint long successful probe output; failures/final snapshots remain full

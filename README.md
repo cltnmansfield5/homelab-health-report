@@ -100,7 +100,10 @@ for token refresh. Inspect a real bundle's redaction before enabling uploads.
 - Routine Docker exec events and one known repetitive AppArmor ptrace-denial
   pattern are compacted by default. Original timestamps and deduplication
   identities remain available; failed execs, health/lifecycle events and other
-  journal messages remain individual. See [noise compaction](docs/bundle-protocol.md#optional-noise-compaction).
+  journal messages remain individual. Further compaction stores all Docker stats
+  in self-contained tables and fingerprints long successful health-check output;
+  no sample-rate or size-limit increase. See [noise compaction](docs/bundle-protocol.md#optional-noise-compaction)
+  and [upgrade/verification steps](docs/noise-reduction.md).
 - Reviewed bundles: 7 days locally / 30 days in Drive, measured from collection
   completion. Cleanup requires a matching receipt and saved report. Unprocessed
   bundles are preserved; a full queue stops new bundles.

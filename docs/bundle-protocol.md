@@ -63,8 +63,11 @@ These additive record fields do not change the archive or receipt schema.
   lifecycle, health and OOM events. Exec-command text is not retained.
 - Host journal records can have `summaries` alongside `rows`. Only repeated
   `docker-default` / `tokio-rt-worker` ptrace-read denials against `unconfined`
-  peers are compacted. Error/critical priorities, unfamiliar denials and other
-  messages stay individual. Signatures keep the PID, boot and access details;
+  peers are compacted. Exact `kauditd_printk_skb: N callbacks suppressed`
+  kernel messages can also be grouped as `kernel_callback_suppression`; each
+  distinct N stays in its own signature. These warn of missing original journal
+  messages: occurrence counts are neither suppressed-callback counts nor incidents.
+  Error/critical priorities, unfamiliar denials and other messages stay individual. Signatures keep the PID, boot and access details;
   only audit sequence/timestamp text is normalized for grouping.
   Each summary retains an `example` plus `occurrences` pairs of
   `[identity_sha256, original_realtime_microseconds]`, and first/last timestamps.
@@ -89,6 +92,49 @@ If the spool is full, at most 256 pending entries are retained; further events
 follow the existing bounded-spool behavior and produce a cap notice. Summary
 `at` is flush time, which can be later than the original events after an outage.
 No summary extends demonstrated event coverage into that delay.
+
+
+### Compact statistics and successful health checks
+
+`docker_stats_table` is a self-contained record for one collector sampling cycle,
+with `data.encoding = "dict-columns-v1"`, `data.samples`, and `data.tables`.
+Every table contains `columns` (arrays of nested dictionary keys), `rows` (arrays
+of corresponding values), and `indexes` (original positions in the cycle).
+Assign each row value to its column's nested dictionary path, then restore the
+rows by index. Empty dictionaries, nulls and arrays are values, not missing data.
+`homelab_health.tables.unpack_stats` in the trusted project implements the bounded
+reader. Never load code from a diagnostic archive. Readers must reject malformed
+or unknown encodings and report a coverage gap rather than silently skip them.
+
+There is no numeric aggregation or reduced sampling frequency. Every statistic,
+integer precision, sign, container ID and Docker `read` timestamp survives. Batch
+`at` is when the cycle's results are written; use individual `read` timestamps for
+measurement intervals. Each cycle flushes before `sample()` returns, with no
+cross-cycle pending queue. Statistics remain legacy `docker_stats` records when
+compaction is disabled, not beneficial, or exceeds encoder bounds. A process
+crash before the cycle flush can lose that cycle's in-memory statistics; it does
+not create a durable backlog. All original error records remain individual.
+
+Limits: 128 samples, 128 columns per table, 8 dictionary levels, 128 characters
+per nonempty key, and 1 MiB encoded payload. Duplicate/conflicting paths, repeated
+or missing indexes, wrong row widths and count mismatches are rejected. Keys and
+values are redacted **before** dictionary keys are factored into column arrays.
+Archive and receipt schema versions and safety limits are unchanged.
+
+In periodic `docker_state` only, a healthy snapshot's successful probe `Output`
+longer than 256 UTF-8 bytes may be replaced with `successful_output_omitted=true`,
+`output_bytes` and `output_sha256` of its **redacted** text. Start, End, ExitCode
+and other fields remain. Short successes, unknown/nonzero exits and all probe
+logs in unhealthy/starting snapshots stay verbatim (subject to normal redaction).
+New sampled failures/failing-streak changes trigger a state record even before
+the usual five-minute heartbeat. Final `docker/ID.json` files retain full probe
+logs. A hash proves neither correctness nor the meaning of omitted output.
+
+Successful complete `links`, `routes` and `mounts` JSON command output may have
+insignificant indentation removed, flagged by `json_whitespace_compacted=true`.
+Parsed values are unchanged. Failed, truncated, timed-out and non-JSON output is
+not compacted. No source, sampling interval, cap, permission or application
+logging setting is changed by these representations.
 
 ## Processing receipt
 

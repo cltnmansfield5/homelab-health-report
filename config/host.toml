@@ -15,3 +15,4 @@ smart_devices = []             # optional explicit /dev/sda or /dev/nvme0n1
 nvidia_gpu = false
 redact_literals = []
 redaction_file = "/etc/homelab-health/private-redactions.txt"
+compact_json_checks = true # remove indentation from successful links/routes/mounts JSON; preserve parsed values

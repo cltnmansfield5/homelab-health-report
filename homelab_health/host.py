@@ -11,7 +11,7 @@ import socket
 import time
 
 from .common import MIB, Redactor, Spool, atomic_json, bounded_int, command, lock, now, read_json, redactor_from, stamp, status
-from .noise import compact_journal
+from .noise import compact_journal, compact_json_text
 
 UNIT = re.compile(r"[A-Za-z0-9_@.:-]+\.(?:service|timer)\Z")
 DEVICE = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|nvme[0-9]+n[0-9]+|disk/by-id/[A-Za-z0-9_.:-]+)\Z")
@@ -96,6 +96,8 @@ class HostHelper:
         }
         for name, argv in checks.items():
             result = command(argv)
+            if name in ("links", "routes", "mounts") and self.config.get("compact_json_checks", True):
+                result = compact_json_text(result)
             if name == "clock" and result.get("ok") and "NTPSynchronized=" not in result.get("text", ""):
                 result.update(ok=False, error="clock_properties_missing")
             self.spool.append(name, result)
@@ -159,7 +161,9 @@ class HostHelper:
             end = now()
             self.snapshot(end - dt.timedelta(minutes=5), end)
             self.daily()
-        status(self.directory / "status.json", accepted and not sample["errors"], hostname=socket.gethostname(), sample_errors=sample["errors"], sample_seconds=self.interval)
+        status(self.directory / "status.json", accepted and not sample["errors"], hostname=socket.gethostname(), sample_errors=sample["errors"], sample_seconds=self.interval,
+               compaction={"journal_denials": bool(self.config.get("compact_journal_denials", True)),
+                           "json_checks": bool(self.config.get("compact_json_checks", True)), "format_revision": 2})
 
     def run(self):
         signal.signal(signal.SIGTERM, lambda *_: setattr(self, "stop", True))
