@@ -201,7 +201,7 @@ def spool_window(directory, start, end, limit=8 * MIB):
 
 
 def spool_chunks(directory, start, end, limit=8 * MIB, *, redactor=None,
-                 compact=False, chunk_limit=8 * MIB):
+                 compact=False, compact_docker=False, chunk_limit=8 * MIB):
     """Budget actual exported bytes; each member has an independent dictionary.
 
     No persistent spool/state is rewritten. A retry reconstructs its dictionaries
@@ -212,8 +212,10 @@ def spool_chunks(directory, start, end, limit=8 * MIB, *, redactor=None,
 
     if not 2 * MIB <= chunk_limit <= 8 * MIB:
         raise ValueError("Evidence chunk limit must be between 2 and 8 MiB")
+    if compact_docker and not compact:
+        raise ValueError("Docker field compaction requires compact evidence")
     redactor = redactor or Redactor()
-    encoder = EvidenceEncoder()
+    encoder = EvidenceEncoder(docker_compaction=compact_docker)
     chunks, chunk, issues = [], bytearray(), []
     total = count = decoded_total = decoded_chunk = 0
     first = last = None
@@ -234,7 +236,7 @@ def spool_chunks(directory, start, end, limit=8 * MIB, *, redactor=None,
             chunks.append(bytes(chunk))
             chunk = bytearray()
             decoded_chunk = 0
-            encoder = EvidenceEncoder()
+            encoder = EvidenceEncoder(docker_compaction=compact_docker)
             # A reference from the prior member is not valid in this member.
             raw = json_bytes(encoder.encode(cleaned) if compact else cleaned) + b"\n"
         if total + len(raw) > limit:
@@ -255,5 +257,5 @@ def spool_chunks(directory, start, end, limit=8 * MIB, *, redactor=None,
         issues.append({"error": "no_records_in_requested_window"})
     coverage = {"records": count, "first_record_utc": first, "last_record_utc": last, "issues": issues}
     if compact:
-        coverage["evidence_encoding"] = "refs-v1"
+        coverage["evidence_encoding"] = "refs-v2" if compact_docker else "refs-v1"
     return chunks, coverage

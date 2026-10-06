@@ -23,3 +23,5 @@ compact_health_successes = true # fingerprint long successful probe output; fail
 
 # Enable only after every evidence consumer has the refs-v1 decoder.
 compact_evidence = true       # opt-in lossless export references; raw spools stay unchanged
+# Upgrade all evidence readers to refs-v2 before enabling. No larger caps needed.
+compact_docker_evidence = true # exact exec deltas, I/O rows and reusable state metadata
