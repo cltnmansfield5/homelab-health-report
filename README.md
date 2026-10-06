@@ -144,3 +144,5 @@ old collection gaps cannot be reconstructed by compaction.
 [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE) ·
 [Third-party notices](THIRD_PARTY_NOTICES.md)
 
+
+Optional [lossless export references](docs/export-compaction.md) reduce repeated evidence before source caps. They are disabled until readers are upgraded.

@@ -39,3 +39,5 @@ message and source supporting that escalation. A later lower reading does not
 remove an earlier critical condition. First/last timestamps bound all observations;
 recovery requires separate fresh evidence. The 2026-09-27 regression covers disk
 usage rising from 90% to 98% and then falling to 88%, including out-of-order input.
+
+For [refs-v1 export records](export-compaction.md), verify the archive first and decode with a fresh `homelab_health.evidence.EvidenceDecoder` per member before interpretation. Malformed records/references are coverage gaps; never infer healthy status from rejected evidence. Upgrade every report consumer before enabling the collector flag.

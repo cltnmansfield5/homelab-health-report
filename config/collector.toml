@@ -20,3 +20,6 @@ redaction_file = "/config/private-redactions.txt" # private exact strings, outsi
 
 compact_stats = true           # lossless self-contained tables; preserve every sample and read timestamp
 compact_health_successes = true # fingerprint long successful probe output; failures/final snapshots remain full
+
+# Enable only after every evidence consumer has the refs-v1 decoder.
+compact_evidence = false       # opt-in lossless export references; raw spools stay unchanged

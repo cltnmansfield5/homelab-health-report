@@ -37,3 +37,7 @@ Use `python3 -m unittest tests.test_regressions -v` for this focused coverage.
 Report skipped integration tests explicitly; do not count a skipped rclone or
 Docker test as executed. Run `bash -n scripts/prepare-host.sh scripts/security-check.sh`
 before shell changes and inspect the full CI job for image/security checks.
+
+## Optional export references
+
+`python3 -m unittest tests.test_export_compaction -v` covers lossless roundtrips, source/member boundaries, dictionary resets, recovery, redaction, legacy/new reporter parity, malformed references and bounded expansion. Use `scripts/benchmark-export-compaction.py` with a locally verified archive/marker to replay real retained evidence without committing it. See [rollout and limits](export-compaction.md).
