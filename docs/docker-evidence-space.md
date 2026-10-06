@@ -67,7 +67,9 @@ missing; full-window projections are estimates, not recovered observations.
 
 1. Upgrade every report/automation reader to this revision's trusted
    `homelab_health.evidence.EvidenceDecoder` first. It reads legacy, v1 and v2
-   records. Keep that decoder for previously produced compacted archives.
+   records. Update saved reporting instructions from the
+   [v1/v2 task template](chatgpt-report-prompt.md), so workers recognize the new
+   encoding. Keep that decoder for previously produced compacted archives.
 2. Merge the reviewed patch. In Komodo, pull the revision and **build/redeploy
    the existing collector service**. A pull-only image update does not rebuild
    the code or built-in configuration. Do not start a second collector/stack.

@@ -143,7 +143,9 @@ until the authentic original is recovered. Do not edit hashes to hide corruption
 
 1. Run `python3 -m unittest discover -v`, the existing demo and release/CI checks.
    Review the patch and exact commit before any publication or deployment.
-2. Upgrade the reporter and every other consumer first. Keep `compact_evidence =
+2. Upgrade the reporter, every other consumer and their saved reporting task
+   instructions first; use the [v1/v2 template](chatgpt-report-prompt.md).
+   Keep `compact_evidence =
    false` while validating an existing legacy archive and synthetic mixed-format
    fixtures. Retain the updated decoder for historical compacted archives.
 3. In an approved deployment, set `compact_evidence = true` for the collector,

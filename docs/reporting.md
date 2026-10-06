@@ -40,4 +40,14 @@ remove an earlier critical condition. First/last timestamps bound all observatio
 recovery requires separate fresh evidence. The 2026-09-27 regression covers disk
 usage rising from 90% to 98% and then falling to 88%, including out-of-order input.
 
-For [refs-v1 export records](export-compaction.md), verify the archive first and decode with a fresh `homelab_health.evidence.EvidenceDecoder` per member before interpretation. Malformed records/references are coverage gaps; never infer healthy status from rejected evidence. Upgrade every report consumer before enabling the collector flag.
+For [refs-v1 and refs-v2 export records](export-compaction.md), verify archive
+and member integrity first, then pass every JSONL line in order through a fresh
+trusted `homelab_health.evidence.EvidenceDecoder` per member. Use the decoder
+supporting both versions before interpreting records or expanding stats. V2
+restores container IDs, exact exec timestamps/actions, I/O dictionaries and state
+metadata; these are encoded values, not missing evidence. Legacy and both marked
+versions can share a member. Malformed/unknown encodings, invalid references and
+expansion failures are coverage gaps; never infer healthy status or issue a
+processing receipt from rejected or partially reviewed evidence. Upgrade every
+report/automation consumer and its task instructions before enabling the
+collector options. Follow the [updated task template](chatgpt-report-prompt.md).

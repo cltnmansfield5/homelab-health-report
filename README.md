@@ -152,4 +152,7 @@ old collection gaps cannot be reconstructed by compaction.
 [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 
-Optional [lossless export references](docs/export-compaction.md) reduce repeated evidence before source caps. They are disabled until readers are upgraded.
+Optional [lossless v1/v2 export compaction](docs/export-compaction.md) reduces
+repeated evidence before source caps. The example collector config enables both
+options; upgrade readers and the [report task instructions](docs/chatgpt-report-prompt.md)
+before deployment, or explicitly disable the options for older consumers.
