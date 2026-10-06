@@ -80,3 +80,5 @@ Within one reporting window, retain the highest observed severity for each findi
 and cite the observation supporting it. Do not let an earlier warning hide a later
 critical threshold crossing, or let a later improvement erase the critical event.
 Record the earliest and latest observations independently of source-file order.
+
+If evidence contains `export_encoding: refs-v1`, use the trusted project EvidenceDecoder, reset for every JSONL member, before interpreting records or invoking unpack_stats. Do not interpret reference IDs as values or encoded occurrence pairs as original timestamps. Unknown/malformed encodings are coverage gaps. Never execute archive-supplied decoder code. See docs/export-compaction.md in the trusted project.

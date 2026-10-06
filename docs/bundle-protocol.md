@@ -199,3 +199,7 @@ the outbox and uploader state together; follow [Komodo adoption](komodo.md).
 Exec-create/start argument suffixes are removed before event spooling. This
 changes only newly collected event content; old immutable archives retain their
 original hashes and bytes and must not be silently rewritten.
+
+## Optional export-only references
+
+[refs-v1](export-compaction.md) is an opt-in per-record encoding within evidence members. Decode marked records using a fresh trusted EvidenceDecoder per member before expanding stats or interpreting journal occurrences. New readers accept legacy records; older readers require the collector flag to remain off. Archive/marker hashes still cover the exact encoded bytes.

@@ -11,6 +11,7 @@ import re
 
 from .bundle import read_verified_bundle
 from .tables import unpack_stats
+from .evidence import EvidenceDecoder, MAX_DECODED_MEMBER_BYTES, MAX_DECODED_BUNDLE_BYTES
 from .common import Redactor, atomic_bytes, atomic_json, now, parse_time, stamp
 
 
@@ -80,18 +81,23 @@ def analyze(marker, manifest, contents):
     findings = {}
     evidence = []
     parse_errors = []
+    decoded_total = 0
     for name in sorted(n for n in contents if re.fullmatch(r"(?:host|docker)/evidence(?:-[0-9]{3})?\.jsonl", n)):
+        decoder = EvidenceDecoder(max_decoded_bytes=min(MAX_DECODED_MEMBER_BYTES, MAX_DECODED_BUNDLE_BYTES - decoded_total))
         for index, line in enumerate(contents.get(name, b"").splitlines(), 1):
             try:
-                record = json.loads(line)
+                record = decoder.decode(json.loads(line))
                 parse_time(record["at"])
                 if record.get("kind") == "docker_stats_table":
                     for sample in unpack_stats(record["data"]):
                         evidence.append(({**record, "kind": "docker_stats", "data": sample}, f"{name}:{index}"))
                 else:
                     evidence.append((record, f"{name}:{index}"))
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError, OverflowError, RecursionError):
+                # A malformed JSON line may have been a definition. Do not guess.
+                decoder.failed = True
                 parse_errors.append(f"{name}:{index}")
+        decoded_total += decoder.decoded_bytes
     def add(key, severity, service, message, source, at, next_step, count=1):
         if key not in findings:
             findings[key] = {"key": key, "severity": severity, "service": service, "message": message,
@@ -186,8 +192,12 @@ def analyze(marker, manifest, contents):
                         seen.add(identity)
                         fresh.append(int(timestamp))
                 if fresh:
-                    first = stamp(dt.datetime.fromtimestamp(min(fresh) / 1e6, dt.timezone.utc))
-                    last = stamp(dt.datetime.fromtimestamp(max(fresh) / 1e6, dt.timezone.utc))
+                    try:
+                        first = stamp(dt.datetime.fromtimestamp(min(fresh) / 1e6, dt.timezone.utc))
+                        last = stamp(dt.datetime.fromtimestamp(max(fresh) / 1e6, dt.timezone.utc))
+                    except (ValueError, OverflowError, OSError):
+                        gap(source, "Journal occurrence timestamp outside supported calendar range", at)
+                        continue
                     signature = group.get("signature", "")
                     if group.get("kind") == "kernel_callback_suppression":
                         key = "journal_suppression:" + hashlib.sha256(signature.encode()).hexdigest()[:16]

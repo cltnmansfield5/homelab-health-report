@@ -153,12 +153,8 @@ def read_verified_bundle(archive, marker_path, max_expanded=160 * MIB):
     return marker, manifest, contents
 
 
-def spool_window(directory, start, end, limit=8 * MIB):
-    """Keep complete records only; annotate dropped records and absent periods."""
-    output = bytearray()
-    first = last = None
-    issues = []
-    count = 0
+def _spool_records(directory, start, end, issues):
+    """Yield complete raw records; keep spool failures visible to both exporters."""
     directory = Path(directory)
     for path in sorted(directory.glob("????-??-??.jsonl")):
         if path.is_symlink() or not path.is_file() or not start.date().isoformat() <= path.stem <= end.date().isoformat():
@@ -182,13 +178,82 @@ def spool_window(directory, start, end, limit=8 * MIB):
                     continue
                 if not start <= at <= end:
                     continue
-                if len(output) + len(line) > limit:
-                    issues.append({"error": "source_byte_limit", "omitted_from_utc": stamp(at)})
-                    return bytes(output), {"records": count, "first_record_utc": first, "last_record_utc": last, "issues": issues}
-                output.extend(line)
-                count += 1
-                first = first or stamp(at)
-                last = stamp(at)
+                yield line, record, at
+
+
+def spool_window(directory, start, end, limit=8 * MIB):
+    """Legacy raw export API; keep complete records and explicit coverage gaps."""
+    output = bytearray()
+    first = last = None
+    issues = []
+    count = 0
+    for line, record, at in _spool_records(directory, start, end, issues):
+        if len(output) + len(line) > limit:
+            issues.append({"error": "source_byte_limit", "omitted_from_utc": stamp(at)})
+            break
+        output.extend(line)
+        count += 1
+        first = first or stamp(at)
+        last = stamp(at)
     if count == 0:
         issues.append({"error": "no_records_in_requested_window"})
     return bytes(output), {"records": count, "first_record_utc": first, "last_record_utc": last, "issues": issues}
+
+
+def spool_chunks(directory, start, end, limit=8 * MIB, *, redactor=None,
+                 compact=False, chunk_limit=8 * MIB):
+    """Budget actual exported bytes; each member has an independent dictionary.
+
+    No persistent spool/state is rewritten. A retry reconstructs its dictionaries
+    deterministically from the selected raw records, including across midnight.
+    """
+    from .evidence import (EvidenceEncoder, json_bytes, MAX_RECORD_BYTES,
+                           MAX_DECODED_MEMBER_BYTES, MAX_DECODED_SOURCE_BYTES)
+
+    if not 2 * MIB <= chunk_limit <= 8 * MIB:
+        raise ValueError("Evidence chunk limit must be between 2 and 8 MiB")
+    redactor = redactor or Redactor()
+    encoder = EvidenceEncoder()
+    chunks, chunk, issues = [], bytearray(), []
+    total = count = decoded_total = decoded_chunk = 0
+    first = last = None
+    for line, record, at in _spool_records(directory, start, end, issues):
+        # Redact literals before defining references or encoding identity bytes.
+        cleaned = redactor.clean(record)
+        decoded_size = len(json_bytes(cleaned)) + 1
+        if decoded_size > MAX_RECORD_BYTES:
+            issues.append({"error": "export_record_size_limit", "omitted_from_utc": stamp(at)})
+            break
+        if decoded_total + decoded_size > MAX_DECODED_SOURCE_BYTES:
+            issues.append({"error": "decoded_source_byte_limit", "omitted_from_utc": stamp(at)})
+            break
+        encoded = encoder.encode(cleaned) if compact else cleaned
+        raw = json_bytes(encoded) + b"\n"
+        if chunk and (len(chunk) + len(raw) > chunk_limit
+                      or decoded_chunk + decoded_size > MAX_DECODED_MEMBER_BYTES):
+            chunks.append(bytes(chunk))
+            chunk = bytearray()
+            decoded_chunk = 0
+            encoder = EvidenceEncoder()
+            # A reference from the prior member is not valid in this member.
+            raw = json_bytes(encoder.encode(cleaned) if compact else cleaned) + b"\n"
+        if total + len(raw) > limit:
+            issues.append({"error": "source_byte_limit", "omitted_from_utc": stamp(at)})
+            break
+        if len(raw) > chunk_limit:
+            raise ValueError("Evidence record exceeds member limit")
+        chunk.extend(raw)
+        total += len(raw)
+        decoded_chunk += decoded_size
+        decoded_total += decoded_size
+        count += 1
+        first = first or stamp(at)
+        last = stamp(at)
+    if chunk or not chunks:
+        chunks.append(bytes(chunk))
+    if count == 0:
+        issues.append({"error": "no_records_in_requested_window"})
+    coverage = {"records": count, "first_record_utc": first, "last_record_utc": last, "issues": issues}
+    if compact:
+        coverage["evidence_encoding"] = "refs-v1"
+    return chunks, coverage
