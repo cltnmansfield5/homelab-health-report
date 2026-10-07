@@ -40,4 +40,12 @@ before shell changes and inspect the full CI job for image/security checks.
 
 ## Optional export references
 
-`python3 -m unittest tests.test_export_compaction -v` covers lossless roundtrips, source/member boundaries, dictionary resets, recovery, redaction, legacy/new reporter parity, malformed references and bounded expansion. Use `scripts/benchmark-export-compaction.py` with a locally verified archive/marker to replay real retained evidence without committing it. See [rollout and limits](export-compaction.md).
+`python3 -m unittest tests.test_export_compaction tests.test_docker_export_compaction -v`
+covers lossless v1/v2 roundtrips, source/member boundaries, dictionary resets,
+recovery, redaction, legacy/new reporter parity, malformed references and bounded
+expansion. Docker cases additionally preserve exact nanosecond pairs, IDs,
+signed counters, future/literal shapes and failure output. Use
+`scripts/benchmark-export-compaction.py` with a locally verified archive/marker
+and `--docker-fields` to replay v2 retained evidence without committing private
+data. See [rollout and limits](export-compaction.md); the
+[fuller-report template](chatgpt-report-prompt.md) recognizes both versions.

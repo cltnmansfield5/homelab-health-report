@@ -12,8 +12,10 @@ import json
 import re
 
 from .common import MIB
+from .docker_compaction import eligible as docker_eligible, pack_fields, unpack_fields
 
 ENCODING = "refs-v1"
+DOCKER_ENCODING = "refs-v2"
 OCCURRENCES = "sha256-b64-us-delta-v1"
 MAX_RECORD_BYTES = 2 * MIB
 MAX_DICTIONARY_BYTES = 8 * MIB
@@ -75,36 +77,60 @@ def _unpack_occurrences(value, max_bytes=MAX_RECORD_BYTES):
     return result
 
 
-def _slots(record):
+def _slots(record, docker_v2=False, resolve_columns=None):
     """Only explicit known fields are eligible; never interpret arbitrary data."""
     kind, data = record.get("kind"), record.get("data")
     if not isinstance(data, dict):
-        return []
+        return
     if kind in ("mounts", "dns_state", "routes") and "text" in data:
-        return [(kind + ".text", data, "text", str)]
-    if kind == "docker_exec_summary" and "attributes" in data:
-        return [("exec.attributes", data, "attributes", dict)]
-    if (kind == "docker_stats_table" and data.get("encoding") == "dict-columns-v1"
+        yield kind + ".text", data, "text", str
+    elif kind == "docker_exec_summary":
+        if "attributes" in data:
+            yield "exec.attributes", data, "attributes", dict
+        if docker_v2 and "id" in data:
+            yield "container.id", data, "id", str
+    elif docker_v2 and kind == "docker_state" and "_metadata" in data:
+        yield "state.metadata", data, "_metadata", dict
+    elif (kind == "docker_stats_table" and data.get("encoding") == "dict-columns-v1"
             and isinstance(data.get("tables"), list)):
-        return [("stats.columns", table, "columns", list) for table in data["tables"]
-                if isinstance(table, dict) and "columns" in table]
-    return []
+        for table in data["tables"]:
+            if not isinstance(table, dict) or "columns" not in table:
+                continue
+            columns = table["columns"]
+            yield "stats.columns", table, "columns", list
+            # The preceding yield validates the column reference and installs
+            # its definition in the decoder's transactional pending dictionary.
+            if docker_v2:
+                if not isinstance(columns, list) and resolve_columns:
+                    columns = resolve_columns(columns)
+                if not isinstance(columns, list):
+                    raise ValueError("Invalid Docker columns")
+                for index, path in enumerate(columns):
+                    if path == ["id"]:
+                        rows = table.get("rows")
+                        if (not isinstance(rows, list) or len(rows) > 128
+                                or any(not isinstance(row, list) or len(row) != len(columns) for row in rows)):
+                            raise ValueError("Invalid Docker identity rows")
+                        for row in rows:
+                            yield "container.id", row, index, str
 
 
 class EvidenceEncoder:
-    def __init__(self):
+    def __init__(self, docker_compaction=False):
         self.values = {}
         self.bytes = 0
+        self.docker_compaction = docker_compaction
 
     def encode(self, record):
         if "export_encoding" in record:
             raise ValueError("Already encoded evidence cannot be re-encoded as raw spool data")
         result = copy.deepcopy(record)
-        changed = False
+        docker_v2 = self.docker_compaction and docker_eligible(result)
+        changed = pack_fields(result) if docker_v2 else False
         pending = {}
         pending_bytes = 0
         # Validate the complete candidate before creating any definitions.
-        slots = _slots(result)
+        slots = list(_slots(result, docker_v2))
         if any(not isinstance(parent[key], kind) for _, parent, key, kind in slots):
             return record
         for namespace, parent, key, _ in slots:
@@ -114,13 +140,18 @@ class EvidenceEncoder:
             if identity in self.values or identity in pending:
                 parent[key] = {"ref": self.values.get(identity, pending.get(identity))}
                 changed = True
-            elif (len(raw) >= 128 and len(self.values) + len(pending) < MAX_DEFINITIONS
+            elif (len(raw) >= (32 if namespace == "container.id" else 128)
+                  and len(self.values) + len(pending) < MAX_DEFINITIONS
                   and self.bytes + pending_bytes + len(raw) <= MAX_DICTIONARY_BYTES):
                 index = len(self.values) + len(pending)
                 pending[identity] = index
                 pending_bytes += len(raw)
                 parent[key] = {"define": index, "value": value}
                 changed = True
+            elif docker_v2 and isinstance(value, dict):
+                # Unlike v1, another field may change while this dict stays
+                # small/full. Distinguish literal wrapper-shaped values safely.
+                parent[key] = {"literal": value}
         if result.get("kind") in ("journal_warnings", "kernel_journal", "unit_journal"):
             data = result.get("data")
             if isinstance(data, dict) and isinstance(data.get("summaries"), list):
@@ -132,12 +163,13 @@ class EvidenceEncoder:
                             summary["occurrences"] = packed
                             changed = True
         if changed:
-            result["export_encoding"] = ENCODING
+            result["export_encoding"] = DOCKER_ENCODING if docker_v2 else ENCODING
             if len(json_bytes(result)) + 1 > MAX_RECORD_BYTES:
                 return record
             self.values.update(pending)
             self.bytes += pending_bytes
-        return result
+            return result
+        return record
 
 
 class EvidenceDecoder:
@@ -167,8 +199,11 @@ class EvidenceDecoder:
             else:
                 if self.failed:
                     raise ValueError("Encoded member is incomplete")
-                if record["export_encoding"] != ENCODING:
+                if record["export_encoding"] not in (ENCODING, DOCKER_ENCODING):
                     raise ValueError("Unsupported evidence encoding")
+                docker_v2 = record["export_encoding"] == DOCKER_ENCODING
+                if docker_v2 and record.get("kind") not in ("docker_exec_summary", "docker_stats_table", "docker_state"):
+                    raise ValueError("Docker encoding on non-Docker record")
                 result = copy.deepcopy(record)
                 del result["export_encoding"]
                 pending = {}
@@ -182,15 +217,26 @@ class EvidenceDecoder:
                         and len(result["data"]["tables"]) > 128):
                     raise ValueError("Encoded table group limit")
                 replacements = []
-                for namespace, parent, key, expected in _slots(result):
+                def resolve_columns(value):
+                    # This field was validated immediately before the generator
+                    # requests its paths. Never resolve unvalidated arbitrary keys.
+                    if "define" in value:
+                        return pending[value["define"]][1]
+                    return pending.get(value["ref"], self.values.get(value["ref"]))[1]
+                for namespace, parent, key, expected in _slots(result, docker_v2, resolve_columns):
                     value = parent[key]
                     # Lists/strings remain literal if too small or dictionary is full.
                     if expected is not dict and isinstance(value, expected):
                         continue
-                    # Exec attributes in an encoded exec record are always a reference.
+                    # Dictionary slots use wrappers in marked records; v2 also
+                    # has an explicit wrapper for an unchanged literal dict.
                     if not isinstance(value, dict):
                         raise ValueError("Invalid value reference")
-                    if set(value) == {"define", "value"}:
+                    if docker_v2 and expected is dict and set(value) == {"literal"}:
+                        literal = value["literal"]
+                        if not isinstance(literal, expected):
+                            raise ValueError("Invalid literal dictionary")
+                    elif set(value) == {"define", "value"}:
                         index = value["define"]
                         literal = value["value"]
                         if (type(index) is not int or index != len(self.values) + len(pending)
@@ -213,10 +259,18 @@ class EvidenceDecoder:
                     projected += len(json_bytes(literal)) - len(json_bytes(value))
                     replacements.append((parent, key, literal))
                     changed = True
-                if projected > budget:
+                # Flattening state metadata removes this fixed wrapper overhead.
+                # Include it in the pre-copy bound so an exact decoded-size
+                # budget is accepted without allowing unbounded ref expansion.
+                overhead = (len(json_bytes({"_metadata": {}})) - len(json_bytes({}))
+                            if docker_v2 and result.get("kind") == "docker_state"
+                            and "_metadata" in result.get("data", {}) else 0)
+                if projected > budget + overhead:
                     raise ValueError("Decoded evidence byte limit")
                 for parent, key, literal in replacements:
                     parent[key] = copy.deepcopy(literal)
+                if docker_v2:
+                    changed = unpack_fields(result, budget) or changed
                 if result.get("kind") in ("journal_warnings", "kernel_journal", "unit_journal"):
                     data = result.get("data")
                     if isinstance(data, dict) and isinstance(data.get("summaries"), list):

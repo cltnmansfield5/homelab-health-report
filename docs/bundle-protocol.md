@@ -202,4 +202,20 @@ original hashes and bytes and must not be silently rewritten.
 
 ## Optional export-only references
 
-[refs-v1](export-compaction.md) is an opt-in per-record encoding within evidence members. Decode marked records using a fresh trusted EvidenceDecoder per member before expanding stats or interpreting journal occurrences. New readers accept legacy records; older readers require the collector flag to remain off. Archive/marker hashes still cover the exact encoded bytes.
+[refs-v1 and refs-v2](export-compaction.md) are opt-in per-record encodings within
+evidence members. After integrity validation, pass every line through a fresh
+trusted `EvidenceDecoder` per member before expanding stats, interpreting
+events/states, or reading journal occurrences. V2 adds exact exec deltas,
+container-ID references, compact I/O rows and state-metadata references. It
+preserves original values, identities and timestamps; it does not establish
+missing historical coverage. Legacy, v1 and v2 records may coexist and share a
+member's bounded dictionary.
+
+Upgrade all readers and fuller-report task instructions to the v2 decoder before
+enabling `compact_docker_evidence`. Old v1 readers require that option to remain
+off; readers without v1 support require `compact_evidence` off as well.
+Unknown/invalid encodings and decoding limits are explicit coverage gaps, and
+partially reviewed bundles remain pending without receipts. See the
+[reporting template](chatgpt-report-prompt.md) and exact codec bounds.
+Archive/marker hashes still cover the original stored encoded bytes; decoding
+must never alter source archives or replace their identity in receipts.

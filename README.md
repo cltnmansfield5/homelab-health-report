@@ -104,6 +104,13 @@ for token refresh. Inspect a real bundle's redaction before enabling uploads.
   in self-contained tables and fingerprints long successful health-check output;
   no sample-rate or size-limit increase. See [noise compaction](docs/bundle-protocol.md#optional-noise-compaction)
   and [upgrade/verification steps](docs/noise-reduction.md).
+- The example enables lossless export references and further Docker field
+  compaction (`compact_evidence` / `compact_docker_evidence`). Repeated IDs and
+  state metadata, exec timestamp deltas and disk-I/O rows fit more evidence into
+  the existing cap while preserving every captured value and timestamp. Upgrade
+  all readers to `refs-v2` before redeploying the collector. See
+  [Docker evidence-space fix](docs/docker-evidence-space.md) and
+  [the exact encoding](docs/export-compaction.md).
 - Reviewed bundles: 7 days locally / 30 days in Drive, measured from collection
   completion. Cleanup requires a matching receipt and saved report. Unprocessed
   bundles are preserved; a full queue stops new bundles.
@@ -145,4 +152,7 @@ old collection gaps cannot be reconstructed by compaction.
 [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 
-Optional [lossless export references](docs/export-compaction.md) reduce repeated evidence before source caps. They are disabled until readers are upgraded.
+Optional [lossless v1/v2 export compaction](docs/export-compaction.md) reduces
+repeated evidence before source caps. The example collector config enables both
+options; upgrade readers and the [report task instructions](docs/chatgpt-report-prompt.md)
+before deployment, or explicitly disable the options for older consumers.
