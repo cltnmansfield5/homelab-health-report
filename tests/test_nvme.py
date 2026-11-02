@@ -214,6 +214,15 @@ class NvmeTests(unittest.TestCase):
             self.assertEqual(nvme.main(), 2)
             run.assert_not_called()
 
+    def test_writer_size_bound_includes_final_newline(self):
+        payload = self.captured()
+        size = len(json.dumps(payload, ensure_ascii=False, allow_nan=False).encode())
+        with patch.object(nvme, "capture", return_value=payload), patch.object(nvme, "MAX_CACHE", size), \
+                patch.object(nvme.sys, "argv", ["nvme"]):
+            self.assertEqual(nvme.main(), 1)
+            self.assertLessEqual(self.cache.stat().st_size, size)
+        self.assertEqual(read_json(self.cache)["issues"], ["nvme_cache_size_limit"])
+
     def test_host_imports_nvme_without_direct_admin_command_and_rechecks_age(self):
         self.saved()
         actual = nvme._read_file

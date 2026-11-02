@@ -241,7 +241,7 @@ def main():
         return 2
     payload = capture()
     raw = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
-    if len(raw) > MAX_CACHE:
+    if len(raw) + 1 > MAX_CACHE:  # atomic_json also writes a trailing newline.
         payload.update(ok=False, devices=[], issues=["nvme_cache_size_limit"])
     atomic_json(CACHE, payload)
     return 0 if payload["ok"] else 1
