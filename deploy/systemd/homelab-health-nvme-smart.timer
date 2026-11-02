@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh homelab health NVMe SMART snapshots
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=6h
+RandomizedDelaySec=5m
+AccuracySec=1m
+Unit=homelab-health-nvme-smart.service
+
+[Install]
+WantedBy=timers.target

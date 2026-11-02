@@ -7,6 +7,7 @@
 | `/opt/homelab-health` | Installed root-owned Python helper code |
 | `/etc/homelab-health` | Private host config and literal-redaction file |
 | `/var/lib/homelab-health/host` | Helper status and bounded raw host evidence |
+| `/var/lib/homelab-health/nvme` | Root-owned, atomically replaced NVMe SMART cache; no credentials |
 | `/var/lib/homelab-health/samples` | Bounded Docker sample/event spool |
 | `/var/lib/homelab-health/outbox` | Immutable archive/marker pairs awaiting upload/review |
 | `/var/lib/homelab-health/collector-state` | Schedule, event cursor and collector lock |
@@ -60,4 +61,5 @@ The report command creates Markdown/JSON only; it does not create a full-review
 processing receipt or send email. Those actions belong to the separate report
 worker and require its own setup.
 
+[NVMe SMART permissions](nvme-smart.md) · [Memory/I/O stall capture](stall-troubleshooting.md) ·
 [Komodo guide](komodo.md) · [Protocol](bundle-protocol.md) · [Security](../SECURITY.md)

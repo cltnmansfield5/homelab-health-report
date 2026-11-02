@@ -26,7 +26,19 @@ depends on the host, Docker daemon, deployment-manager account and trusted build
 - The native helper runs trusted, root-owned code with fixed argv and bounded
   subprocesses. Its restricted capabilities still permit privileged journal/device
   access. It accepts no container-supplied commands and mounts no cloud credential.
-  Unsupported NVMe reads remain gaps; do not add broad privileges as a shortcut.
+  Its capability set does not include `CAP_SYS_ADMIN`. NVMe admin reads run only
+  in a separate fixed probe: root-owned installed code, no caller arguments or
+  container-supplied configuration, isolated Python imports, no network, access
+  only to NVMe controller character devices, mount/namespace operations blocked,
+  and bounded subprocesses/output. Persistent output is limited to its cache under
+  `/var/lib/homelab-health/nvme`. This service needs the powerful `CAP_SYS_ADMIN`
+  capability; its isolation limits exposure but cannot make that capability
+  intrinsically read-only. Compromise of its trusted code or device/parser stack
+  remains a host risk. Do not grant it to the general helper or containers.
+  The general helper checks root ownership, file type/mode, size/schema, host,
+  boot, physical-controller identity and source age before importing the cache.
+  Unsupported/failed/stale reads remain gaps; the probe is not an arbitrary
+  command or SMART-test interface. See [NVMe deployment](docs/nvme-smart.md).
 - Only the uploader mounts OAuth credentials. Its Drive scope may extend beyond
   Inbox/Reports. Folder IDs are selectors, not access controls. Keep both folders,
   credentials, evidence and receipts private.

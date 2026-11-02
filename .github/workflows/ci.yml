@@ -20,7 +20,7 @@ jobs:
         run: |
           bash -n scripts/prepare-host.sh scripts/security-check.sh
           HH_UID=10001 HH_GID=10001 DOCKER_GID=999 docker compose config --quiet
-          systemd-analyze verify deploy/systemd/homelab-health-host.service
+          systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer
       - name: Build both images
         run: |
           docker build --target collector -t homelab-health:ci .

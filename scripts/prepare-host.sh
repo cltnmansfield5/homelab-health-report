@@ -21,6 +21,7 @@ health_gid="$(getent group homelab-health | cut -d: -f3)"
 socket_gid="$(stat -c '%g' /var/run/docker.sock)"
 install -d -o root -g homelab-health -m 0750 /var/lib/homelab-health
 install -d -o root -g homelab-health -m 0750 /var/lib/homelab-health/host
+install -d -o root -g homelab-health -m 0750 /var/lib/homelab-health/nvme
 for directory in outbox samples collector-state uploader-state credentials; do
   install -d -o "$health_uid" -g "$health_gid" -m 0700 "/var/lib/homelab-health/$directory"
 done
@@ -36,6 +37,8 @@ if [[ ! -f /etc/homelab-health/private-redactions.txt ]]; then
   install -o root -g homelab-health -m 0640 /dev/null /etc/homelab-health/private-redactions.txt
 fi
 install -o root -g root -m 0644 "$project_dir/deploy/systemd/homelab-health-host.service" /etc/systemd/system/
+install -o root -g root -m 0644 "$project_dir/deploy/systemd/homelab-health-nvme-smart.service" /etc/systemd/system/
+install -o root -g root -m 0644 "$project_dir/deploy/systemd/homelab-health-nvme-smart.timer" /etc/systemd/system/
 if [[ -f "$project_dir/.env" ]]; then
   echo 'Preserved existing .env; verify IDs if this is a reinstall.'
 else

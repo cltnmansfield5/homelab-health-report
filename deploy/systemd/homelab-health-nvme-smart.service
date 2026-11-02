@@ -1,0 +1,41 @@
+[Unit]
+Description=Homelab health fixed NVMe SMART reader
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+Group=homelab-health
+WorkingDirectory=/opt/homelab-health
+# Isolated Python imports only the root-owned installed package.
+ExecStart=/usr/bin/python3 -I -B -c "import sys; sys.path.insert(0, '/opt/homelab-health'); from homelab_health.nvme import main; sys.exit(main())"
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0027
+StateDirectory=homelab-health/nvme
+StateDirectoryMode=0750
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateNetwork=true
+PrivateDevices=no
+DevicePolicy=closed
+DeviceAllow=char-nvme rw
+CapabilityBoundingSet=CAP_SYS_ADMIN
+RestrictNamespaces=true
+SystemCallFilter=~@mount @module @reboot @swap
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX
+InaccessiblePaths=-/var/lib/homelab-health/credentials -/var/lib/homelab-health/host -/var/run/docker.sock
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=16
+LimitFSIZE=2M
+LimitCORE=0
+KillMode=control-group
+TimeoutStartSec=180

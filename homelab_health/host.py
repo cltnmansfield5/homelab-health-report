@@ -12,9 +12,10 @@ import time
 
 from .common import MIB, Redactor, Spool, atomic_json, bounded_int, command, lock, now, read_json, redactor_from, stamp, status
 from .noise import compact_journal, compact_json_text
+from .nvme import CacheError, controller_for_device, discover_controllers, read_cache
 
 UNIT = re.compile(r"[A-Za-z0-9_@.:-]+\.(?:service|timer)\Z")
-DEVICE = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|nvme[0-9]+n[0-9]+|disk/by-id/[A-Za-z0-9_.:-]+)\Z")
+DEVICE = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|nvme[0-9]+(?:n[0-9]+)?|disk/by-id/[A-Za-z0-9_.:-]+)\Z")
 
 
 def read_text(path, limit=512 * 1024):
@@ -62,8 +63,43 @@ class HostHelper:
         if any(not DEVICE.fullmatch(v) for v in self.devices) or len(self.devices) > 32:
             raise ValueError("Invalid SMART device")
         self.stop = False
+        self._nvme_seen = {}
+
+    def nvme_smart(self):
+        """Import fixed-probe results without granting this helper SYS_ADMIN."""
+        if self.devices:
+            names = sorted({name for device in self.devices if (name := controller_for_device(device))})
+        elif self.config.get("smart_autodetect", True):
+            try:
+                names = discover_controllers()
+            except FileNotFoundError:
+                names = []
+            except OSError:
+                self.spool.append("smart", {"ok": False, "source": "nvme_cache", "error": "nvme_discovery_failed"})
+                return
+        else:
+            return
+        if not names:
+            return
+        try:
+            payload = read_cache()
+            by_name = {row["device"].removeprefix("/dev/"): row for row in payload["devices"]}
+            rows = [{"source": "nvme_cache", **by_name.get(name, {"device": "/dev/" + name,
+                     "ok": False, "error": "nvme_cache_device_missing"})} for name in names[:32]]
+            if payload["issues"]:
+                rows.append({"source": "nvme_cache", "ok": False, "error": "nvme_probe_coverage_gap", "issues": payload["issues"]})
+        except CacheError as exc:
+            rows = [{"source": "nvme_cache", "device": "/dev/" + name, "ok": False, "error": str(exc)} for name in names[:32]]
+        for row in rows:
+            # Re-emit an unchanged gap daily; retain each actual source time.
+            key = row.get("device", "coverage")
+            signature = (now().date(), json.dumps(row, sort_keys=True))
+            if self._nvme_seen.get(key) != signature:
+                self.spool.append("smart", row)
+                self._nvme_seen[key] = signature
 
     def snapshot(self, start, end):
+        self.nvme_smart()
         base = ["journalctl", "--no-pager", "--output=json", "--since=@" + str(int(start.timestamp())), "--until=@" + str(int(end.timestamp())), "--lines=" + str(self.journal_lines + 1)]
         queries = {"journal_warnings": base + ["--priority=0..4"], "kernel_journal": base + ["--dmesg"]}
         if self.units + self.jobs:
@@ -128,6 +164,7 @@ class HostHelper:
             self.spool.append("connectivity_probe", {"target": target, "result": command(["ping", "-n", "-c", "1", "-W", "2", target], timeout=4)})
 
     def daily(self):
+        self.nvme_smart()
         self.spool.append("os", {"hostname": socket.gethostname(), "release": read_text("/etc/os-release"), "kernel": os.uname().release})
         self.spool.append("updates", {"reboot_required": Path("/var/run/reboot-required").exists(), "apt_cache_only": True, "upgradable": command(["apt", "list", "--upgradable"], timeout=30), "note": "Cached package state; no apt update or upgrade is run."})
         self.spool.append("temperatures", command(["sensors", "-j"]))
@@ -143,6 +180,8 @@ class HostHelper:
         if not devices:
             self.spool.append("smart", {"error": "no_supported_devices_configured_or_found"})
         for device in devices[:32]:
+            if controller_for_device(device):
+                continue  # The separate fixed probe owns all NVMe admin reads.
             # -n standby avoids spinning up sleeping ATA disks. No tests or settings changes.
             result = command(["smartctl", "--json", "--all", "--quietmode=noserial", "--nocheck=standby", device], timeout=30)
             try:

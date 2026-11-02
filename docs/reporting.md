@@ -6,6 +6,13 @@ container health/OOM state and log messages needing review. Keyword matches are
 not incident counts. Use --previous PATH.json to compare finding keys; absence
 does not establish recovery.
 
+NVMe `smart` records with `source = "nvme_cache"` retain `observed_at_utc`
+and `started_at_utc` from the separate probe. Use those source times for the
+health observation, not the later JSONL `at` import time. Repeated imports do
+not create new measurements. Missing, failed, mismatched, or stale cache results
+are coverage gaps. A nonzero smartctl exit status is a bitmask: health flags
+can coexist with a complete read (`collection_complete = true`).
+
 A fuller report worker should:
 
 1. Read completed archive/marker pairs and prior receipts from the configured
