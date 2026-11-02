@@ -178,6 +178,16 @@ class NvmeTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["devices"], [])
 
+    def test_failed_smartctl_diagnostic_is_retained_and_sanitized(self):
+        data = {"smartctl": {"exit_status": 4, "messages": [{"string": "synthetic permission denied"}]},
+                "serial_number": "synthetic-private-serial"}
+        self.saved(self.captured(result(data, code=4)))
+        row = self.read()["devices"][0]
+        self.assertFalse(row["collection_complete"])
+        self.assertNotIn("data", row)
+        self.assertEqual(row["diagnostic"]["smartctl"]["messages"][0]["string"], "synthetic permission denied")
+        self.assertNotIn("synthetic-private-serial", json.dumps(row))
+
     def test_health_failure_is_preserved_as_complete_evidence(self):
         health = copy.deepcopy(HEALTH)
         health["smart_status"]["passed"] = False

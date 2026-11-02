@@ -139,6 +139,8 @@ def capture():
                 parsed = _sanitize(_json(result.get("text", "")))
                 if not _health_shape(parsed):
                     row["error"] = "nvme_health_data_missing"
+                    if isinstance(parsed, dict):
+                        row["diagnostic"] = parsed
                 else:
                     row["data"] = parsed
                     code = result["returncode"]
@@ -208,6 +210,8 @@ def read_cache():
             if parse_time(row["started_at_utc"]) > observed:
                 raise CacheError("nvme_cache_source_period_invalid")
             if "data" in row and not _health_shape(row["data"]):
+                raise CacheError("nvme_cache_result_invalid")
+            if "diagnostic" in row and not isinstance(row["diagnostic"], dict):
                 raise CacheError("nvme_cache_result_invalid")
             if row["collection_complete"]:
                 code = row.get("returncode")
