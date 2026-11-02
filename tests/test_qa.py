@@ -62,7 +62,7 @@ class QARegressions(unittest.TestCase):
 
     def test_smart_requests_identifier_suppression(self):
         with tempfile.TemporaryDirectory() as root:
-            helper = HostHelper({"smart_devices": ["/dev/nvme0n1"]}, root)
+            helper = HostHelper({"smart_devices": ["/dev/sda"]}, root)
             with patch("homelab_health.host.read_text", return_value="fixture"), patch("homelab_health.host.command", return_value={"ok": True, "text": "{}"}) as run:
                 helper.daily()
             argv = next(c.args[0] for c in run.call_args_list if c.args[0][0] == "smartctl")

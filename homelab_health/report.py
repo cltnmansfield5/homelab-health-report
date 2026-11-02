@@ -79,6 +79,7 @@ def host_trends(samples):
 
 def analyze(marker, manifest, contents):
     findings = {}
+    smart_cache_seen = set()
     evidence = []
     parse_errors = []
     decoded_total = 0
@@ -176,10 +177,21 @@ def analyze(marker, manifest, contents):
         elif kind in ("dns_probe", "connectivity_probe") and not data.get("result", {}).get("ok"):
             add("probe:" + kind + ":" + str(data.get("host", data.get("target"))), "warning", data.get("host", data.get("target")), kind + " failed or timed out.", source, at, "Compare DNS and connectivity results; ICMP blocking can produce a failed ping without an outage.")
         elif kind == "smart":
+            if data.get("source") == "nvme_cache" and data.get("observed_at_utc"):
+                try:
+                    parse_time(data["observed_at_utc"])
+                except (ValueError, TypeError):
+                    gap(source.split(":")[0], "NVMe source timestamp invalid", at)
+                    continue
+                identity = json.dumps(data, sort_keys=True)
+                if identity in smart_cache_seen:
+                    continue
+                smart_cache_seen.add(identity)
+                at = data["observed_at_utc"]
             smart = data.get("data", {})
             if smart.get("smart_status", {}).get("passed") is False or smart.get("nvme_smart_health_information_log", {}).get("critical_warning", 0):
                 add("smart:" + data.get("device", "unknown"), "critical", data.get("device"), "Device reports failed SMART health or an NVMe critical warning.", source, at, "Verify backups and inspect the complete drive-health evidence; do not start repair automatically.")
-            if not data.get("ok"):
+            if not data.get("collection_complete", data.get("ok")):
                 gap(source.split(":")[0], "SMART result needs interpretation (exit status is a bitmask; standby/unsupported devices may be skipped).", at)
         elif kind in ("journal_warnings", "kernel_journal", "unit_journal"):
             if not data.get("ok") or data.get("line_limit_reached") or data.get("unparsed_lines"):

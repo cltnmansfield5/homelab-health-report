@@ -22,6 +22,7 @@ services.
 | Docker gateway | Docker socket; a small GET allowlist; internal network only |
 | Collector | Gateway, read-only helper exports, writable sample/bundle queue |
 | Ubuntu helper | Root-owned systemd service; fixed host checks; restricted capabilities |
+| NVMe probe | Separate fixed SMART reader; `CAP_SYS_ADMIN`; no network; private cache |
 | Uploader | Bundle queue, state and its own rclone credentials; separate outbound network |
 
 No container publishes a port. See [security boundaries](SECURITY.md) before
@@ -60,6 +61,8 @@ Then start local collection:
 
 ~~~bash
 sudo systemctl enable --now homelab-health-host.service
+sudo systemctl start homelab-health-nvme-smart.service
+sudo systemctl enable --now homelab-health-nvme-smart.timer
 docker compose up -d --build docker-api collector
 docker compose ps
 ~~~
@@ -92,7 +95,9 @@ for token refresh. Inspect a real bundle's redaction before enabling uploads.
 ## Reports, limits and operation
 
 - Host/container counters: every 60 seconds; selected journals and status: every
-  5 minutes; SMART, temperatures and cached update state: daily.
+  5 minutes; SATA SMART, temperatures and cached update state: daily. A separate
+  fixed NVMe SMART service refreshes a private cache every six hours; the host
+  helper imports it within five minutes without gaining `CAP_SYS_ADMIN`.
 - Bundles: startup catch-up, then 06:00 in HH_TIMEZONE; default UTC. Five-minute
   overlap, at most seven days of backfill. History starts when collection starts.
 - Each source spool: 64 MiB/day, current UTC date plus seven preceding dates.
@@ -134,6 +139,11 @@ For updates, use a reviewed revision, rerun the helper installer, rebuild the
 images and restart this project's services. Preserve data, state and credentials.
 Installed host configuration is preserved; compare new examples manually.
 Watchtower updates are disabled for these containers.
+
+Existing installations also need the new NVMe service/timer enabled. Follow
+[NVMe rollout and rollback](docs/nvme-smart.md); reinstalling the helper alone
+does not start the probe. Missing, failed, mismatched or older-than-seven-hour
+cache results remain coverage gaps. The cache retains original observation times.
 
 For the noise-compaction update, rebuild/redeploy the existing collector and
 update the native helper from the same reviewed checkout using the normal
